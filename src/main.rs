@@ -78,10 +78,18 @@ fn model(app: &App) -> Model {
     app.new_window().size(1280, 800).view(view).build().unwrap();
 
     let assets = app.assets_path().unwrap();
-    let images_dir = assets.join("images").join("main_classroom").join("main_classroom_day.png");
+
+    // Literal Asset Hashmaps
     let mut backgrounds = HashMap::new();
 
-    backgrounds.insert("primary".to_string(), wgpu::Texture::from_path(app, images_dir).unwrap());
+
+    let background_paths = fs::read_dir(assets.join("images").join("backgrounds"))
+        .expect("No backgrounds dir!")
+        .map(|entry| entry.unwrap().path());
+    for background_path in background_paths {
+        backgrounds.insert(background_path.file_name().unwrap().to_str().unwrap().to_string(), wgpu::Texture::from_path(app, background_path).unwrap());
+    }
+
     let current_background: String = "idk".to_string();
 
     Model { backgrounds, current_background }
@@ -104,7 +112,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     let x = map_range(sine, -1.0, 1.0, boundary.left(), boundary.right());
     let y = map_range(slowersine, -1.0, 1.0, boundary.bottom(), boundary.top());
 
-    draw.texture(model.backgrounds.get("primary").expect("Background does not exist!"));
+    draw.texture(model.backgrounds.get("main_classroom_day.png").expect("Background does not exist!"));
 
     // Draw a blue ellipse at the x/y coordinates 0.0, 0.0
     draw.ellipse().color(STEELBLUE).x_y(x, y);
