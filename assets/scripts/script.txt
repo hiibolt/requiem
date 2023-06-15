@@ -1,0 +1,2 @@
+log msg=`hi`
+ log msg=`oh, what's up!`
