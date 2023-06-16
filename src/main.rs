@@ -3,14 +3,13 @@ use iced::executor;
 use iced::widget::canvas::{
     stroke, Cache, Cursor, Geometry, LineCap, Path, Stroke,
 };
-use iced::widget::{ canvas, container, Image, };
+use iced::widget::{ canvas, container, image, };
 use iced::{
     Application, Color, Command, Element, Length, Point, Rectangle, Settings,
     Subscription, Theme, Vector, 
 };
 
 use std::fs;
-use core::slice::Iter;
 use std::vec::IntoIter;
 use std::collections::HashMap;
 use regex::Regex;
@@ -36,7 +35,7 @@ enum Transition {
 }
 
 struct VisualNovel {
-    //backgrounds: HashMap<String, wgpu::Texture>,
+    backgrounds: HashMap<String, image::Handle>,
 
     transitions_iter: IntoIter<Transition>,
     current_background: String,
@@ -67,10 +66,13 @@ impl Application for VisualNovel {
         /* WARM UP ASSETS */
 
         // Literal Asset Hashmaps
-        /*
         let mut backgrounds = HashMap::new();
-
-        let background_paths = fs::read_dir(assets.join("images").join("backgrounds"))
+        let backgrounds_dir = std::env::current_dir()
+            .expect("Failed to get current directory")
+            .join("assets")
+            .join("images")
+            .join("backgrounds");
+        let background_paths = fs::read_dir(backgrounds_dir)
             .expect("No backgrounds dir!")
             .map(|entry| entry.unwrap().path());
         for background_path in background_paths {
@@ -78,9 +80,11 @@ impl Application for VisualNovel {
                 .file_name().unwrap()
                 .to_str().unwrap()
                 .to_string();
-            let file_texture = wgpu::Texture::from_path(app, background_path).unwrap();
+            let file_texture = image::Handle::from_path(background_path);
+
+            println!("Imported background '{}'", file_name);
             backgrounds.insert(file_name, file_texture);
-        }*/
+        }
 
         /* PRECOMPILATION */
         let command_structure = Regex::new(r"(\w+)(?: (\w+)\=`(.+?)`)+").unwrap();
@@ -123,7 +127,7 @@ impl Application for VisualNovel {
         }).collect();
 
         let visual_novel = VisualNovel {
-            //backgrounds,
+            backgrounds,
 
             transitions_iter: transitions.into_iter(),
 
