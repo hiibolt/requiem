@@ -1,18 +1,39 @@
 use std::fs;
+use core::str::Lines;
 use std::collections::HashMap;
 use regex::Regex;
 
 use nannou::prelude::*;
 
-struct Model {
-    backgrounds: HashMap<String, wgpu::Texture>,
+struct Character<'a> {
+    name: &'a str,
+    outfit: String,
+    emotion: String,
+    description: &'a str,
+    emotions: Vec<&'a str>,
+    xpos: i32,
+    ypos: i32,
+    scale: f32,
+    opacity: f32
+}
+
+enum Transition {
+    Background(String),
+    Say(String, String),
+    End()
+}
+
+struct VisualNovel {
+    script_iter: Iterator,
     current_background: String,
 }
 
-fn compile(s: &str){
-    println!("[ Beginning Compilation ]");
+struct Model {
+    backgrounds: HashMap<String, wgpu::Texture>,
+}
 
-    let mut cmds = s.lines();
+fn compile(mut cmds: Lines){
+    println!("[ Beginning Compilation ]");
 
     let command_structure = Regex::new(r"(\w+)(?: (\w+)\=`(.+?)`)+").unwrap();
 
@@ -61,17 +82,9 @@ fn compile(s: &str){
 }
 
 fn main() {
-    println!("Starting Compile - Reading File");
-
-    let contents: &str = &fs::read_to_string("./assets/scripts/script.txt")
-        .expect("Issue reading file!");
-    println!("[ Contents ]\n{contents}");
-    
     nannou::app(model)
         .update(update)
         .run();
-
-    compile(contents);
 }
 
 fn model(app: &App) -> Model {
@@ -87,17 +100,30 @@ fn model(app: &App) -> Model {
         .expect("No backgrounds dir!")
         .map(|entry| entry.unwrap().path());
     for background_path in background_paths {
-        backgrounds.insert(background_path.file_name().unwrap().to_str().unwrap().to_string(), wgpu::Texture::from_path(app, background_path).unwrap());
+        let file_name = background_path
+            .file_name().unwrap()
+            .to_str().unwrap()
+            .to_string();
+        let file_texture = wgpu::Texture::from_path(app, background_path).unwrap();
+        backgrounds.insert(file_name, file_texture);
     }
 
-    let current_background: String = "idk".to_string();
+    let current_background: String = "main_classroom_day.png".to_string();
 
-    Model { backgrounds, current_background }
+
+    let full_script_string: String = fs::read_to_string("./assets/scripts/script.txt")
+        .expect("Issue reading file!");
+    let script_iter = full_script_string.lines();
+    
+    
+    Model { backgrounds, current_background, full_script_string, script_iter }
 }
 
 fn update(_app: &App, _model: &mut Model, _update: Update) {}
 
 fn view(app: &App, model: &Model, frame: Frame) {
+    compile(model.script_iter);
+
     // Prepare to draw.
     let draw = app.draw();
 
@@ -112,7 +138,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     let x = map_range(sine, -1.0, 1.0, boundary.left(), boundary.right());
     let y = map_range(slowersine, -1.0, 1.0, boundary.bottom(), boundary.top());
 
-    draw.texture(model.backgrounds.get("main_classroom_day.png").expect("Background does not exist!"));
+    draw.texture(model.backgrounds.get(&model.current_background).expect("Background does not exist!"));
 
     // Draw a blue ellipse at the x/y coordinates 0.0, 0.0
     draw.ellipse().color(STEELBLUE).x_y(x, y);
