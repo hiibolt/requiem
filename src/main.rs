@@ -68,7 +68,7 @@ impl Application for VisualNovel {
         // Literal Asset Hashmaps
         let mut backgrounds = HashMap::new();
         let backgrounds_dir = std::env::current_dir()
-            .expect("Failed to get current directory")
+            .expect("Failed to get current directory!")
             .join("assets")
             .join("backgrounds");
         let background_paths = fs::read_dir(backgrounds_dir)
@@ -89,7 +89,11 @@ impl Application for VisualNovel {
         let command_structure = Regex::new(r"(\w+)(?: (\w+)\=`(.+?)`)+").unwrap();
 
         // Compile Script into a vector Transitions, then create an iterator over them
-        let full_script_string: String = fs::read_to_string("./assets/scripts/script.txt")
+        let full_script_string: String = fs::read_to_string(std::env::current_dir()
+                .expect("Failed to get current directory!")
+                .join("assets")
+                .join("scripts")
+                .join("script.txt"))
             .expect("Issue reading file!");
         let transitions: Vec<Transition> = full_script_string.lines().map(move |line| {
             println!("[ Compiling ] `{line}`");
