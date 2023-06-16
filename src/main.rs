@@ -1,5 +1,5 @@
 use std::fs;
-use core::str::Lines;
+use core::slice::Iter;
 use std::collections::HashMap;
 use regex::Regex;
 
@@ -20,11 +20,12 @@ struct Character<'a> {
 enum Transition {
     Background(String),
     Say(String, String),
+    Log(String),
     End()
 }
 
-struct VisualNovel {
-    script_iter: Iterator,
+struct VisualNovel<'a> {
+    transitions_iter: Iter<'a, Transition>,
     current_background: String,
 }
 
@@ -32,56 +33,52 @@ struct Model {
     backgrounds: HashMap<String, wgpu::Texture>,
 }
 
-fn compile(mut cmds: Lines){
-    println!("[ Beginning Compilation ]");
-
+fn main() {
     let command_structure = Regex::new(r"(\w+)(?: (\w+)\=`(.+?)`)+").unwrap();
 
-    // Loop through each command
-    loop {
-        match cmds.next() {
-            Some(line) => {
-                println!("[ Compiling ] `{line}`");
-                let mut command_options: HashMap<&str, &str> = HashMap::new();
+    // Compile Script into a vector Transitions, then create an iterator over them
+    let full_script_string: String = fs::read_to_string("./assets/scripts/script.txt")
+        .expect("Issue reading file!");
+    let transitions: Vec<Transition> = full_script_string.lines().map(|line| {
+        println!("[ Compiling ] `{line}`");
 
-                // Grabs the command in its normal habitat
-                let command_captures = command_structure.captures(line).unwrap();
+        let mut command_options: HashMap<String, String> = HashMap::new();
 
-                // Rips said command into pieces
-                let mut args = command_captures.iter();
-                let cmd_id = args
-                    .nth(1)
-                    .expect("There should be a command definition.")
-                    .expect("There should be a match on the first.")
-                    .as_str();
-                println!("CMD: `{cmd_id}`");
+        // Grabs the command in its normal habitat
+        let command_captures = command_structure.captures(line).unwrap();
 
-                // Adds each option from the command to the options hashmap
-                while let Some(capture) = args.next() {
-                    let option: &str = capture.map_or("", |m| m.as_str());
-                    let value: &str  = args.next().expect("Missing value!").map_or("", |m| m.as_str());
-                    
-                    command_options.insert(option, value);
-                    println!("Added option `{}` as `{}`", option, value);
-                }
+        // Remove the command identifier seperately
+        let mut args = command_captures.iter();
+        let cmd_id = args
+            .nth(1)
+            .expect("There should be a command definition.")
+            .expect("There should be a match on the first.")
+            .as_str();
+        println!("CMD: `{cmd_id}`");
 
-                // Try to run the command
-                match cmd_id {
-                    "log" => {
-                        println!("{}", command_options.get("msg").expect("Should have value!"));
-                    },
-                    _ => panic!("Bad command! {cmd_id}")
-                }
-            }
-            None => {
-                println!("Done!");
-                return;
-            }
+        // Adds each option from the command to the options hashmap
+        while let Some(capture) = args.next() {
+            let option: String = capture.map_or("".to_string(), |m| m.as_str().to_string());
+            let value: String  = args.next().expect("Missing value!").map_or("".to_string(), |m| m.as_str().to_string());
+            
+            command_options.insert(option, value);
         }
-    }
-}
 
-fn main() {
+        // Try to run the command
+        match cmd_id {
+            "log" => {
+                return Transition::Log(command_options.get("msg").expect("Should have value!").to_string());
+            },
+            _ => panic!("Bad command! {cmd_id}")
+        }
+    }).collect();
+    let transitions_iter = transitions.iter();
+
+    let primary = VisualNovel {
+        transitions_iter,
+        current_background: "default".to_string(),
+    };
+
     nannou::app(model)
         .update(update)
         .run();
@@ -108,21 +105,16 @@ fn model(app: &App) -> Model {
         backgrounds.insert(file_name, file_texture);
     }
 
-    let current_background: String = "main_classroom_day.png".to_string();
 
-
-    let full_script_string: String = fs::read_to_string("./assets/scripts/script.txt")
-        .expect("Issue reading file!");
-    let script_iter = full_script_string.lines();
     
     
-    Model { backgrounds, current_background, full_script_string, script_iter }
+    
+    Model { backgrounds }
 }
 
 fn update(_app: &App, _model: &mut Model, _update: Update) {}
 
 fn view(app: &App, model: &Model, frame: Frame) {
-    compile(model.script_iter);
 
     // Prepare to draw.
     let draw = app.draw();
@@ -138,7 +130,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     let x = map_range(sine, -1.0, 1.0, boundary.left(), boundary.right());
     let y = map_range(slowersine, -1.0, 1.0, boundary.bottom(), boundary.top());
 
-    draw.texture(model.backgrounds.get(&model.current_background).expect("Background does not exist!"));
+    draw.texture(model.backgrounds.get(primary.current_background).expect("Background does not exist!"));
 
     // Draw a blue ellipse at the x/y coordinates 0.0, 0.0
     draw.ellipse().color(STEELBLUE).x_y(x, y);
