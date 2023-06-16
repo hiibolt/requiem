@@ -70,7 +70,6 @@ impl Application for VisualNovel {
         let backgrounds_dir = std::env::current_dir()
             .expect("Failed to get current directory")
             .join("assets")
-            .join("images")
             .join("backgrounds");
         let background_paths = fs::read_dir(backgrounds_dir)
             .expect("No backgrounds dir!")
