@@ -63,7 +63,8 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
         let mut command_options: HashMap<String, String> = HashMap::new();
 
         // Grabs the command in its normal habitat
-        let command_captures = command_structure.captures(line).unwrap();
+        let command_captures = command_structure.captures(line)
+            .expect("Bad command structure! Ex: [cmd option1=`` option2=``]");
 
         // Remove the command identifier seperately
         let mut args = command_captures.iter();
