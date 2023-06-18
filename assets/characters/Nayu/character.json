@@ -1,4 +1,7 @@
 {
+    "default_outfit": "uniform_neutral",
+    "default_emotion": "SAD.png",
+
 	"name": "Nayu", 
     "age": "18",
     "genre": "drama manga, coming-of-age",
