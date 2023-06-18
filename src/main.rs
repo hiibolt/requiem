@@ -1,8 +1,13 @@
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    window::*,
+};
 use std::fs;
+use std::path::Path;
 use std::vec::IntoIter;
 use std::collections::HashMap;
 use regex::Regex;
+use json::parse;
 
 #[derive(Component)]
 struct Character {
@@ -166,20 +171,41 @@ fn main() {
         backgrounds.insert(file_name, file_texture);
     }
     */
+    let character_string: String = fs::read_to_string(std::env::current_dir()
+            .expect("Failed to get current directory!")
+            .join("assets")
+            .join("characters")
+            .join("Kiyomi")
+            .join("character.json"))
+        .expect("Issue reading file!");
+    let parsed = json::parse(&character_string).expect("Malformed JSON!");
+    println!("{}", parsed["name"]);
 
-    
-/*
-    let visual_novel = VisualNovel {
-        //backgrounds,
-
-        transitions_iter: transitions.into_iter(),
-
-        current_background: "default".to_string()
-    };
-*/
     App::new()
-        .add_plugins(DefaultPlugins) 
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: String::from("I am a window!"),
+                resolution: (1200., 800.).into(),
+                present_mode: PresentMode::AutoVsync,
+                // Tells wasm to resize the window according to the available canvas
+                fit_canvas_to_parent: true,
+                // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
+                prevent_default_event_handling: false,
+                ..default()
+            }),
+            ..default()
+        })) 
         .init_resource::<VisualNovelState>()
+        .add_startup_system(setup)
         .add_plugin(Compiler)
         .run();
+}
+
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands.spawn(Camera2dBundle::default());
+    commands.spawn(SpriteBundle {
+        texture: asset_server.load(Path::new("characters/Nayu/uniform_neutral/NEUTRAL.png")),
+        transform: Transform::from_scale(Vec3 {x:0.5, y:0.5, z:1.}),
+        ..default()
+    });
 }
