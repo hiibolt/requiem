@@ -1,3 +1,4 @@
 log msg=`hi`
  log msg=`oh, what's up!`
 bg background=`main_classroom_day.png`
+set type=`emotion` character=`Nayu` emotion=`CRYING`
