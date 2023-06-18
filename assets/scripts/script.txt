@@ -1,4 +1,4 @@
 log msg=`hi`
  log msg=`oh, what's up!`
-bg background=`main_classroom_day.png`
-set type=`emotion` character=`Nayu` emotion=`CRYING`
+set type=`background` background=`main_classroom_noon`
+set type=`emotion` character=`Nayu` emotion=`LAUGHING`

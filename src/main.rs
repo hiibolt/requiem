@@ -13,8 +13,7 @@ use json::parse;
 #[derive(Resource, Default)]
 struct VisualNovelState {
     transitions_iter: IntoIter<Transition>,
-    blocking: bool,
-    current_background: String,
+    blocking: bool
 }
 
 #[derive(Component)]
@@ -31,6 +30,50 @@ struct CharacterSprites {
 }
 #[derive(Resource)]
 struct OpacityFadeTimer(Timer);
+
+#[derive(Component)]
+struct Background {
+    background_sprites: HashMap::<String, Handle<Image>>
+}
+
+pub struct BackgroundController;
+impl Plugin for BackgroundController {
+    fn build(&self, app: &mut App){
+        app.add_startup_system(import_backgrounds);
+    }
+}
+fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
+    let mut background_sprites: HashMap<String, Handle<Image>>= HashMap::new();
+
+    let master_backgrounds_dir = std::env::current_dir()
+        .expect("Failed to get current directory!")
+        .join("assets")
+        .join("backgrounds");
+    let background_paths = fs::read_dir(master_backgrounds_dir)
+        .expect("Unable to read outfit folders!")
+        .map(|entry| entry.unwrap().path());
+    for background_path in background_paths {
+        let background_name = background_path
+            .file_stem().expect("Must have a complete file name!")
+            .to_str().unwrap()
+            .to_string();
+        let background_texture = asset_server.load(background_path);
+
+        println!("Imported background '{}'", background_name);
+        background_sprites.insert(background_name, background_texture);
+    }
+
+    /* Background Setup */
+    commands.spawn((
+        Background {
+            background_sprites,
+        }, 
+        SpriteBundle {
+            transform: Transform::IDENTITY,
+            ..default()
+        }
+    ));
+}
 
 pub struct CharacterController;
 impl Plugin for CharacterController {
@@ -107,13 +150,13 @@ fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
             ).collect::<Vec<String>>(),
     },
     SpriteBundle {
-        texture: outfits.get(&outfit.clone())
+        texture: outfits.get(&outfit)
             .expect("'{character.outfit}' attribute does not exist!")
-            .get(&emotion.clone())
+            .get(&emotion)
             .expect("'default_emotion' atttribute does not exist!")
             .clone(),
         transform: Transform::IDENTITY
-            .with_translation(Vec3 { x:0., y:-40., z:0. } )
+            .with_translation(Vec3 { x:0., y:-40., z:1. } )
             .with_scale(Vec3 { x:0.75, y:0.75, z:1. } ),
         ..default()
     },
@@ -145,23 +188,24 @@ fn update_characters(
 
 
 enum Transition {
-    Background(String),
     Say(String, String),
     SetEmotion(String, String),
+    SetBackground(String),
     Log(String),
     End
 }
 impl Transition {
-    fn call(&self, game_state: &mut ResMut<VisualNovelState>, character_query: &mut Query<(
-        &mut Character, 
-        &CharacterSprites,
-        &mut Handle<Image>
-    )> ) {
+    fn call(
+        &self, 
+        game_state: &mut ResMut<VisualNovelState>, 
+        character_query: &mut Query<(
+            &mut Character, 
+            &CharacterSprites,
+            &mut Handle<Image>
+        ), (With<Character>, Without<Background>)>,
+        background_query: &mut Query<(&Background, &mut Handle<Image>), (With<Background>, Without<Character>)>
+    ) {
         match self {
-            Transition::Background(id) => {
-                (*game_state).current_background = id.clone();
-                println!("[ Set current background to '{id}' ]");
-            },
             Transition::Say(_character_name, _msg) => {
                 todo!();
             },
@@ -176,6 +220,14 @@ impl Transition {
                             .clone();
                         println!("[ Set emotion of '{character_name}' to '{emotion}']");
                     }
+                }
+            }
+            Transition::SetBackground(background_id) => {
+                for (background_obj, mut current_sprite) in background_query.iter_mut() {
+                    *current_sprite = background_obj.background_sprites.get(background_id)
+                        .expect("'{character.outfit}' attribute does not exist!")
+                        .clone();
+                    println!("[ Set background to '{background_id}']");
                 }
             }
             Transition::Log(msg) => println!("{msg}"),
@@ -240,12 +292,6 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
                     .to_owned();
                 return Transition::Log(msg);
             },
-            "bg" => {
-                let background_id = command_options.get("background")
-                    .expect("Missing 'background' option!")
-                    .to_owned();
-                return Transition::Background(background_id);
-            },
             "say" => {
                 let character_id = command_options.get("character")
                     .expect("Missing 'character' option!")
@@ -262,13 +308,19 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
                 match type_of {
                     "emotion" => {
                         let character_name = command_options.get("character")
-                            .expect("Missing 'character' option!")
+                            .expect("Missing 'character' option required for type 'emotion'!")
                             .to_owned();
                         let emotion = command_options.get("emotion")
-                            .expect("Missing 'emotion' option!")
+                            .expect("Missing 'emotion' option required for type 'emotion'!")
                             .to_owned();
                         return Transition::SetEmotion(character_name, emotion);
                     },
+                    "background" => {
+                        let background_id = command_options.get("background")
+                            .expect("Missing 'background' option required for type 'background'!")
+                            .to_owned();
+                        return Transition::SetBackground( background_id );
+                    }
                     _ => panic!("Bad type '{type_of}'!")
                 }
             }
@@ -290,7 +342,8 @@ fn run_transitions (
         &mut Character, 
         &CharacterSprites,
         &mut Handle<Image>
-    )>
+    ), (With<Character>, Without<Background>)>,
+    mut background_query: Query<(&Background, &mut Handle<Image>), (With<Background>, Without<Character>)>
 ) {
     loop {
         if game_state.blocking {
@@ -298,7 +351,7 @@ fn run_transitions (
         }
         match game_state.transitions_iter.next() {
             Some(transition) => {
-                transition.call(&mut game_state, &mut character_query);
+                transition.call(&mut game_state, &mut character_query, &mut background_query);
             },
             None => {
                 return;
@@ -311,8 +364,8 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: String::from("I am a window!"),
-                resolution: (1200., 800.).into(),
+                title: String::from("Ettethread - Requiem"),
+                resolution: (1280., 800.).into(),
                 present_mode: PresentMode::AutoVsync,
                 // Tells wasm to resize the window according to the available canvas
                 fit_canvas_to_parent: true,
@@ -325,6 +378,7 @@ fn main() {
         .init_resource::<VisualNovelState>()
         .add_startup_system(setup)
         .add_plugin(Compiler)
+        .add_plugin(BackgroundController)
         .add_plugin(CharacterController)
         .run();
 }
