@@ -4,7 +4,6 @@ use bevy::{
     asset::{ Handle }
 };
 use std::fs;
-use std::path::Path;
 use std::vec::IntoIter;
 use std::collections::HashMap;
 use regex::Regex;
@@ -27,16 +26,130 @@ struct Character {
     emotion: String,
     description: String,
     emotions: Vec<String>,
-    xpos: i32,
-    ypos: i32,
+    xpos: f32,
+    ypos: f32,
     scale: f32,
     opacity: f32
 }
-
 #[derive(Component)]
 struct CharacterSprites {
     outfits: HashMap::<String, HashMap<String, Handle<Image>>>,
 }
+#[derive(Resource)]
+struct OpacityFadeTimer(Timer);
+
+pub struct CharacterController;
+impl Plugin for CharacterController {
+    fn build(&self, app: &mut App){
+        app.insert_resource(OpacityFadeTimer(Timer::from_seconds(0.005, TimerMode::Repeating)))
+            .add_startup_system(import_characters)
+            .add_system(update_characters);
+    }
+}
+fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
+    /* Character Setup */
+    // Asset Gathering
+    let mut outfits = HashMap::<String, HashMap<String, Handle<Image>>>::new();
+    let master_character_dir = std::env::current_dir()
+        .expect("Failed to get current directory!")
+        .join("assets")
+        .join("characters")
+        .join("Nayu");
+    let outfit_dirs = fs::read_dir(master_character_dir)
+        .expect("Unable to read outfit folders!")
+        .filter_map(|entry| {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                Some(entry.path())
+            } else {
+                None
+            }
+        });
+    for outfit_dir in outfit_dirs {
+        let mut emotion_sprites = HashMap::<String, Handle<Image>>::new();
+        let outfit_name = outfit_dir
+            .file_name().unwrap()
+            .to_str().unwrap()
+            .to_string();
+        
+        let sprite_paths = fs::read_dir(outfit_dir)
+            .expect("No character data!")
+            .map(|entry| entry.unwrap().path());
+        for sprite_path in sprite_paths {
+            let sprite_name = sprite_path
+                .file_name().unwrap()
+                .to_str().unwrap()
+                .to_string();
+            let file_texture = asset_server.load(sprite_path);
+
+            println!("Imported sprite '{}' for outfit '{}'", sprite_name, outfit_name);
+            emotion_sprites.insert(sprite_name, file_texture);
+        }
+        outfits.insert(outfit_name, emotion_sprites);
+    }
+    // Character Info Gathering
+    let character_string: String = fs::read_to_string(std::env::current_dir()
+            .expect("Failed to get current directory!")
+            .join("assets")
+            .join("characters")
+            .join("Nayu")
+            .join("character.json"))
+        .expect("Issue reading file!");
+    let parsed_character = parse(&character_string).expect("Malformed JSON!");
+
+    commands.spawn((
+    Character {
+        name: parsed_character["name"].as_str().expect("Missing 'name' attribute").to_owned(),
+        outfit: parsed_character["default_outfit"].as_str().expect("Missing 'name' attribute").to_owned(),
+        emotion: parsed_character["default_emotion"].as_str().expect("Missing 'name' attribute").to_owned(),
+        description: parsed_character["description"].as_str().expect("Missing 'name' attribute").to_owned(),
+        emotions: parsed_character["emotions"]
+            .members()
+            .map(|entry| entry.as_str()
+                .expect("Missing 'name' attribute")
+                .to_owned()
+            ).collect::<Vec<String>>(),
+        xpos: 0.,
+        ypos: -40.,
+        scale: 0.75,
+        opacity: 0.
+    },
+    CharacterSprites { outfits },
+    SpriteBundle {
+        ..default()
+    }));
+}
+fn update_characters(
+    mut query: Query<(
+        &mut Character, 
+        &CharacterSprites, 
+        &mut Transform, 
+        &mut Handle<Image>, 
+        &mut Sprite
+    )>,
+    time: Res<Time>,
+    mut timer: ResMut<OpacityFadeTimer>
+){
+    for (mut character, sprites, mut transform, mut current_sprite, mut sprite) in query.iter_mut() {
+        // Fade the character in
+        if character.opacity < 1. && timer.0.tick(time.delta()).just_finished() {
+            character.opacity += 0.02;
+        }
+
+        // Update positioning, sprite, and opacity
+        *transform = Transform::IDENTITY
+            .with_translation(Vec3 { x:character.xpos, y:character.ypos, z:0. } )
+            .with_scale(Vec3 { x:character.scale, y:character.scale, z:1. } );
+        *current_sprite = sprites.outfits.get(&character.outfit)
+            .expect("'{character.outfit}' attribute does not exist!")
+            .get(&character.emotion)
+            .expect("'default_emotion' atttribute does not exist!")
+            .clone();
+        let _ = *sprite.color.set_a(character.opacity);
+    }
+}
+
+
 
 enum Transition {
     Background(String),
@@ -57,23 +170,6 @@ impl Transition {
             Transition::Log(msg) => println!("{msg}"),
             Transition::End => println!("TODO: END")
         }
-    }
-}
-
-pub struct CharacterController;
-impl Plugin for CharacterController {
-    fn build(&self, app: &mut App){
-        app.add_system(set_default_sprite);
-    }
-}
-fn set_default_sprite(mut query: Query<(&Character, &CharacterSprites, &mut Handle<Image>)>, asset_server: Res<AssetServer>){
-    for (character, sprites, mut current_sprite) in query.iter_mut() {
-        println!("hi there, {} :3", &character.name);
-        *current_sprite = sprites.outfits.get(&character.outfit)
-            .expect("'{character.outfit}' attribute does not exist!")
-            .get(&character.emotion)
-            .expect("'default_emotion' atttribute does not exist!")
-            .clone();
     }
 }
 
@@ -194,81 +290,7 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(mut commands: Commands) {
     /* Basic Scene Setup */
     commands.spawn(Camera2dBundle::default());
-
-    /* Character Setup */
-    // Asset Gathering
-    let mut outfits = HashMap::<String, HashMap<String, Handle<Image>>>::new();
-    let master_character_dir = std::env::current_dir()
-        .expect("Failed to get current directory!")
-        .join("assets")
-        .join("characters")
-        .join("Nayu");
-    let outfit_dirs = fs::read_dir(master_character_dir)
-        .expect("Unable to read outfit folders!")
-        .filter_map(|entry| {
-            let entry = entry.unwrap();
-            if entry.file_type().unwrap().is_dir() {
-                Some(entry.path())
-            } else {
-                None
-            }
-        });
-    for outfit_dir in outfit_dirs {
-        let mut emotion_sprites = HashMap::<String, Handle<Image>>::new();
-        let outfit_name = outfit_dir
-            .file_name().unwrap()
-            .to_str().unwrap()
-            .to_string();
-        
-        let sprite_paths = fs::read_dir(outfit_dir)
-            .expect("No character data!")
-            .map(|entry| entry.unwrap().path());
-        for sprite_path in sprite_paths {
-            let sprite_name = sprite_path
-                .file_name().unwrap()
-                .to_str().unwrap()
-                .to_string();
-            let file_texture = asset_server.load(sprite_path);
-
-            println!("Imported sprite '{}' for outfit '{}'", sprite_name, outfit_name);
-            emotion_sprites.insert(sprite_name, file_texture);
-        }
-        outfits.insert(outfit_name, emotion_sprites);
-    }
-    // Character Info Gathering
-    let character_string: String = fs::read_to_string(std::env::current_dir()
-            .expect("Failed to get current directory!")
-            .join("assets")
-            .join("characters")
-            .join("Nayu")
-            .join("character.json"))
-        .expect("Issue reading file!");
-    let parsed_character = json::parse(&character_string).expect("Malformed JSON!");
-
-    commands.spawn((
-    Character {
-        name: parsed_character["name"].as_str().expect("Missing 'name' attribute").to_owned(),
-        outfit: parsed_character["default_outfit"].as_str().expect("Missing 'name' attribute").to_owned(),
-        emotion: parsed_character["default_emotion"].as_str().expect("Missing 'name' attribute").to_owned(),
-        description: parsed_character["description"].as_str().expect("Missing 'name' attribute").to_owned(),
-        emotions: parsed_character["emotions"]
-            .members()
-            .map(|entry| entry.as_str()
-                .expect("Missing 'name' attribute")
-                .to_owned()
-            ).collect::<Vec<String>>(),
-        xpos: 0,
-        ypos: 0,
-        scale: 1.,
-        opacity: 1.
-    },
-    CharacterSprites { outfits },
-    SpriteBundle {
-        texture: asset_server.load(Path::new("characters/Nayu/uniform_neutral/NEUTRAL.png")),
-        transform: Transform::from_scale(Vec3 {x:0.5, y:0.5, z:1.}),
-        ..default()
-    }));
 }
