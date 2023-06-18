@@ -25,11 +25,7 @@ struct Character {
     outfit: String,
     emotion: String,
     description: String,
-    emotions: Vec<String>,
-    xpos: f32,
-    ypos: f32,
-    scale: f32,
-    opacity: f32
+    emotions: Vec<String>
 }
 #[derive(Component)]
 struct CharacterSprites {
@@ -42,8 +38,7 @@ pub struct CharacterController;
 impl Plugin for CharacterController {
     fn build(&self, app: &mut App){
         app.insert_resource(OpacityFadeTimer(Timer::from_seconds(0.005, TimerMode::Repeating)))
-            .add_startup_system(import_characters)
-            .add_system(update_characters);
+            .add_startup_system(import_characters);
     }
 }
 fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
@@ -97,11 +92,14 @@ fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
         .expect("Issue reading file!");
     let parsed_character = parse(&character_string).expect("Malformed JSON!");
 
+    let name = parsed_character["name"].as_str().expect("Missing 'name' attribute").to_owned();
+    let outfit = parsed_character["default_outfit"].as_str().expect("Missing 'name' attribute").to_owned();
+    let emotion = parsed_character["default_emotion"].as_str().expect("Missing 'name' attribute").to_owned();
     commands.spawn((
     Character {
-        name: parsed_character["name"].as_str().expect("Missing 'name' attribute").to_owned(),
-        outfit: parsed_character["default_outfit"].as_str().expect("Missing 'name' attribute").to_owned(),
-        emotion: parsed_character["default_emotion"].as_str().expect("Missing 'name' attribute").to_owned(),
+        name: name.clone(),
+        outfit: outfit.clone(),
+        emotion: outfit.clone(),
         description: parsed_character["description"].as_str().expect("Missing 'name' attribute").to_owned(),
         emotions: parsed_character["emotions"]
             .members()
@@ -109,16 +107,22 @@ fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
                 .expect("Missing 'name' attribute")
                 .to_owned()
             ).collect::<Vec<String>>(),
-        xpos: 0.,
-        ypos: -40.,
-        scale: 0.75,
-        opacity: 0.
     },
-    CharacterSprites { outfits },
     SpriteBundle {
+        texture: outfits.get(&outfit.clone())
+            .expect("'{character.outfit}' attribute does not exist!")
+            .get(&emotion.clone())
+            .expect("'default_emotion' atttribute does not exist!")
+            .clone(),
+        transform: Transform::IDENTITY
+            .with_translation(Vec3 { x:0., y:-40., z:0. } )
+            .with_scale(Vec3 { x:0.75, y:0.75, z:1. } ),
         ..default()
-    }));
+    },
+    CharacterSprites { outfits }
+    ));
 }
+/*
 fn update_characters(
     mut query: Query<(
         &mut Character, 
@@ -131,23 +135,14 @@ fn update_characters(
     mut timer: ResMut<OpacityFadeTimer>
 ){
     for (mut character, sprites, mut transform, mut current_sprite, mut sprite) in query.iter_mut() {
-        // Fade the character in
-        if character.opacity < 1. && timer.0.tick(time.delta()).just_finished() {
-            character.opacity += 0.02;
-        }
-
-        // Update positioning, sprite, and opacity
-        *transform = Transform::IDENTITY
-            .with_translation(Vec3 { x:character.xpos, y:character.ypos, z:0. } )
-            .with_scale(Vec3 { x:character.scale, y:character.scale, z:1. } );
         *current_sprite = sprites.outfits.get(&character.outfit)
             .expect("'{character.outfit}' attribute does not exist!")
             .get(&character.emotion)
             .expect("'default_emotion' atttribute does not exist!")
             .clone();
-        let _ = *sprite.color.set_a(character.opacity);
+        //let _ = *sprite.color.set_a(character.opacity);
     }
-}
+}*/
 
 
 
