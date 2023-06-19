@@ -12,6 +12,7 @@ use json::parse;
 
 #[derive(Resource, Default)]
 struct VisualNovelState {
+    gui_sprites: HashMap<String, Handle<Image>>,
     transitions_iter: IntoIter<Transition>,
     blocking: bool
 }
@@ -74,6 +75,98 @@ fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
         }
     ));
 }
+
+
+#[derive(Component)]
+struct GUISprite {
+    id: String,
+}
+
+#[derive(Component)]
+struct GUIScrollText {
+    id: String,
+}
+
+pub struct ChatController;
+impl Plugin for ChatController {
+    fn build(&self, app: &mut App){
+        app.add_startup_system(import_gui_sprites)
+            .add_startup_system(spawn_chatbox);
+    }
+}
+fn import_gui_sprites( mut game_state: ResMut<VisualNovelState>, asset_server: Res<AssetServer> ){
+    let mut gui_sprites = HashMap::<String, Handle<Image>>::new();
+    let master_gui_dir = std::env::current_dir()
+        .expect("Failed to get current directory!")
+        .join("assets")
+        .join("gui");
+    let gui_sprite_paths = fs::read_dir(master_gui_dir)
+        .expect("Unable to read outfit folders!")
+        .map(|entry| entry.unwrap().path());
+    for gui_sprite_path in gui_sprite_paths {
+        let file_name = gui_sprite_path
+            .file_stem().unwrap()
+            .to_str().unwrap()
+            .to_string();
+        println!("[ Importing GUI asset '{file_name}' ]");
+        gui_sprites.insert(file_name, asset_server.load(gui_sprite_path));
+    }
+    game_state.gui_sprites = gui_sprites;
+}
+fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState>, asset_server: Res<AssetServer>){
+    // Spawn Backplate + Nameplate
+    commands.spawn((
+        GUISprite {
+            id: String::from("textbox_background")
+        },
+        SpriteBundle {
+            visibility: Visibility::Visible,
+            transform: Transform::from_xyz(0., -275., 2.),
+            ..default()
+        }
+    ))
+    .with_children(|parent| {
+        parent.spawn((
+            GUISprite {
+                id: String::from("namebox_background")
+            },
+            SpriteBundle {
+                visibility: Visibility::Inherited,
+                transform: Transform::from_xyz(-270., 105., 2.)
+                    .with_scale( Vec3 { x: 0.75, y: 0.75, z: 2. } ),
+                ..default()
+            }
+        ));
+    });
+
+    // Spawn Text
+    commands.spawn((
+        GUIScrollText {
+            id: String::from("text_ui")
+        },
+        TextBundle::from_section(
+            "Nayu_todo",
+            TextStyle {
+                font: asset_server.load("fonts/ALLER.ttf"),
+                font_size: 100.0,
+                color: Color::WHITE,
+            },
+        ).with_text_alignment(TextAlignment::Left)
+            .with_style(Style {
+                position_type: PositionType::Absolute,
+                position: UiRect {
+                    bottom: Val::Px(215.0),
+                    left: Val::Px(335.0),
+                    ..default()
+                },
+                ..default()
+            })
+    ));
+}
+
+
+
+
 
 pub struct CharacterController;
 impl Plugin for CharacterController {
@@ -191,6 +284,7 @@ enum Transition {
     Say(String, String),
     SetEmotion(String, String),
     SetBackground(String),
+    SetGUI(String, String),
     Log(String),
     End
 }
@@ -203,7 +297,14 @@ impl Transition {
             &CharacterSprites,
             &mut Handle<Image>
         ), (With<Character>, Without<Background>)>,
-        background_query: &mut Query<(&Background, &mut Handle<Image>), (With<Background>, Without<Character>)>
+        background_query: &mut Query<(
+            &Background, 
+            &mut Handle<Image>
+        ), (With<Background>, Without<Character>)>,
+        gui_query: &mut Query<(
+            &GUISprite, 
+            &mut Handle<Image>
+        ), (With<GUISprite>, Without<Character>, Without<Background>)>,
     ) {
         match self {
             Transition::Say(_character_name, _msg) => {
@@ -229,7 +330,17 @@ impl Transition {
                         .clone();
                     println!("[ Set background to '{background_id}']");
                 }
-            }
+            },
+            Transition::SetGUI(gui_id, sprite_id) => {
+                for (gui_obj, mut current_sprite) in gui_query.iter_mut() {
+                    if gui_obj.id == *gui_id {
+                        *current_sprite = game_state.gui_sprites.get(sprite_id)
+                            .expect("GUI asset '{sprite_id}' does not exist!")
+                            .clone();
+                        println!("[ Set GUI asset '{gui_id}' to '{sprite_id}']");
+                    }
+                }
+            },
             Transition::Log(msg) => println!("{msg}"),
             Transition::End => {
                 todo!();
@@ -321,6 +432,15 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
                             .to_owned();
                         return Transition::SetBackground( background_id );
                     }
+                    "GUI" => {
+                        let gui_id = command_options.get("id")
+                            .expect("Missing 'id' option required for type 'GUI'!")
+                            .to_owned();
+                        let sprite_id = command_options.get("sprite")
+                            .expect("Missing 'sprite' option required for type 'GUI'!")
+                            .to_owned();
+                        return Transition::SetGUI( gui_id, sprite_id );
+                    }
                     _ => panic!("Bad type '{type_of}'!")
                 }
             }
@@ -343,7 +463,11 @@ fn run_transitions (
         &CharacterSprites,
         &mut Handle<Image>
     ), (With<Character>, Without<Background>)>,
-    mut background_query: Query<(&Background, &mut Handle<Image>), (With<Background>, Without<Character>)>
+    mut background_query: Query<(&Background, &mut Handle<Image>), (With<Background>, Without<Character>)>,
+    mut gui_query: Query<(
+        &GUISprite, 
+        &mut Handle<Image>
+    ), (With<GUISprite>, Without<Character>, Without<Background>)>
 ) {
     loop {
         if game_state.blocking {
@@ -351,7 +475,7 @@ fn run_transitions (
         }
         match game_state.transitions_iter.next() {
             Some(transition) => {
-                transition.call(&mut game_state, &mut character_query, &mut background_query);
+                transition.call(&mut game_state, &mut character_query, &mut background_query, &mut gui_query);
             },
             None => {
                 return;
@@ -380,6 +504,7 @@ fn main() {
         .add_plugin(Compiler)
         .add_plugin(BackgroundController)
         .add_plugin(CharacterController)
+        .add_plugin(ChatController)
         .run();
 }
 
