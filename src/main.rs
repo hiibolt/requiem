@@ -4,8 +4,9 @@ use bevy::{
     asset::{ Handle },
     render::{
         RenderPlugin,
-        settings::{ Backends}
-    }
+        settings::{ Backends }
+    },
+    text::{ BreakLineOn }
 };
 use std::fs;
 use std::vec::IntoIter;
@@ -140,22 +141,68 @@ fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState
                 ..default()
             }
         ));
+        parent.spawn((
+            GUIScrollText {
+                id: String::from("name_text")
+            },
+            Text2dBundle {
+                text: Text {
+                    sections: vec![TextSection::new(
+                        "UNFILLED",
+                        TextStyle {
+                            font: asset_server.load("fonts/ALLER.ttf"),
+                            font_size: 40.0,
+                            color: Color::WHITE,
+                        })],
+                    alignment: TextAlignment::Left,
+                    linebreak_behaviour: BreakLineOn::WordBoundary
+                },
+                transform: Transform::from_xyz(-235., 105., 3.),
+                visibility: Visibility::Inherited,
+                ..default()
+            }
+        ));
+        parent.spawn((
+            GUIScrollText {
+                id: String::from("message_text")
+            },
+            Text2dBundle {
+                text: Text {
+                    sections: vec![TextSection::new(
+                        "UNFILLED CHAT MESSAGE",
+                        TextStyle {
+                            font: asset_server.load("fonts/BOLDITALIC.ttf"),
+                            font_size: 27.0,
+                            color: Color::WHITE,
+                        })],
+                    alignment: TextAlignment::Left,
+                    linebreak_behaviour: BreakLineOn::WordBoundary
+                },
+                transform: Transform::from_xyz(-250., 41.5, 3.),
+                visibility: Visibility::Inherited,
+                ..default()
+            }
+        ));
     });
-
-    // Spawn Text
+    /*
+    // Spawn Name Text
     commands.spawn((
         GUIScrollText {
             id: String::from("text_ui")
         },
-        TextBundle::from_section(
-            "UNFILLED",
-            TextStyle {
-                font: asset_server.load("fonts/ALLER.ttf"),
-                font_size: 40.0,
-                color: Color::WHITE,
+        TextBundle {
+            text: Text {
+                sections: vec![TextSection::new(
+                    "UNFILLED",
+                    TextStyle {
+                        font: asset_server.load("fonts/ALLER.ttf"),
+                        font_size: 40.0,
+                        color: Color::WHITE,
+                    })],
+                alignment: TextAlignment::Left,
+                linebreak_behaviour: BreakLineOn::WordBoundary
             },
-        ).with_text_alignment(TextAlignment::Left)
-            .with_style(Style {
+            style: Style {
                 position_type: PositionType::Absolute,
                 position: UiRect {
                     bottom: Val::Px(210.0),
@@ -163,8 +210,10 @@ fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState
                     ..default()
                 },
                 ..default()
-            })
-    ));
+            },
+            ..default()
+        }
+    ));*/
 }
 
 
@@ -232,31 +281,32 @@ fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
     let name = parsed_character["name"].as_str().expect("Missing 'name' attribute").to_owned();
     let outfit = parsed_character["default_outfit"].as_str().expect("Missing 'name' attribute").to_owned();
     let emotion = parsed_character["default_emotion"].as_str().expect("Missing 'name' attribute").to_owned();
+
     commands.spawn((
-    Character {
-        name: name.clone(),
-        outfit: outfit.clone(),
-        emotion: outfit.clone(),
-        description: parsed_character["description"].as_str().expect("Missing 'name' attribute").to_owned(),
-        emotions: parsed_character["emotions"]
-            .members()
-            .map(|entry| entry.as_str()
-                .expect("Missing 'name' attribute")
-                .to_owned()
-            ).collect::<Vec<String>>(),
-    },
-    SpriteBundle {
-        texture: outfits.get(&outfit)
-            .expect("'{character.outfit}' attribute does not exist!")
-            .get(&emotion)
-            .expect("'default_emotion' atttribute does not exist!")
-            .clone(),
-        transform: Transform::IDENTITY
-            .with_translation(Vec3 { x:0., y:-40., z:1. } )
-            .with_scale(Vec3 { x:0.75, y:0.75, z:1. } ),
-        ..default()
-    },
-    CharacterSprites { outfits }
+        Character {
+            name: name.clone(),
+            outfit: outfit.clone(),
+            emotion: outfit.clone(),
+            description: parsed_character["description"].as_str().expect("Missing 'name' attribute").to_owned(),
+            emotions: parsed_character["emotions"]
+                .members()
+                .map(|entry| entry.as_str()
+                    .expect("Missing 'name' attribute")
+                    .to_owned()
+                ).collect::<Vec<String>>(),
+        },
+        SpriteBundle {
+            texture: outfits.get(&outfit)
+                .expect("'{character.outfit}' attribute does not exist!")
+                .get(&emotion)
+                .expect("'default_emotion' atttribute does not exist!")
+                .clone(),
+            transform: Transform::IDENTITY
+                .with_translation(Vec3 { x:0., y:-40., z:1. } )
+                .with_scale(Vec3 { x:0.75, y:0.75, z:1. } ),
+            ..default()
+        },
+        CharacterSprites { outfits }
     ));
 }
 /*
