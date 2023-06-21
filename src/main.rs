@@ -553,12 +553,6 @@ fn main() {
                 }),
                 ..default()
                 })
-            .set(RenderPlugin {
-                wgpu_settings: bevy::render::settings::WgpuSettings {
-                    backends: Some(Backends::DX12),
-                        ..default()
-                    }
-                })
         ) 
         .init_resource::<VisualNovelState>()
         .add_startup_system(setup)
