@@ -2,11 +2,11 @@ use bevy::{
     prelude::*,
     window::*,
     asset::{ Handle },
+    sprite::{ Anchor },
     render::{
         RenderPlugin,
-        settings::{ Backends }
     },
-    text::{ BreakLineOn }
+    text::{ BreakLineOn, Text2dBounds }
 };
 use std::fs;
 use std::vec::IntoIter;
@@ -85,17 +85,22 @@ fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
 struct GUISprite {
     id: String,
 }
-
 #[derive(Component)]
 struct GUIScrollText {
     id: String,
+}
+
+struct CharacterSayEvent {
+    name: String,
+    message: String,
 }
 
 pub struct ChatController;
 impl Plugin for ChatController {
     fn build(&self, app: &mut App){
         app.add_startup_system(import_gui_sprites)
-            .add_startup_system(spawn_chatbox);
+            .add_startup_system(spawn_chatbox)
+            .add_system(update_chatbox);
     }
 }
 fn import_gui_sprites( mut game_state: ResMut<VisualNovelState>, asset_server: Res<AssetServer> ){
@@ -124,7 +129,7 @@ fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState
             id: String::from("textbox_background")
         },
         SpriteBundle {
-            visibility: Visibility::Visible,
+            visibility: Visibility::Hidden,
             transform: Transform::from_xyz(0., -275., 2.),
             ..default()
         }
@@ -157,7 +162,8 @@ fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState
                     alignment: TextAlignment::Left,
                     linebreak_behaviour: BreakLineOn::WordBoundary
                 },
-                transform: Transform::from_xyz(-235., 105., 3.),
+                text_anchor: Anchor::TopLeft,
+                transform: Transform::from_xyz(-305., 126., 3.),
                 visibility: Visibility::Inherited,
                 ..default()
             }
@@ -178,44 +184,37 @@ fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState
                     alignment: TextAlignment::Left,
                     linebreak_behaviour: BreakLineOn::WordBoundary
                 },
-                transform: Transform::from_xyz(-250., 41.5, 3.),
+                text_anchor: Anchor::TopLeft,
+                text_2d_bounds: Text2dBounds{ size: Vec2 { x: 700., y: 20000.} },
+                transform: Transform::from_xyz(-350., 62., 3.),
                 visibility: Visibility::Inherited,
                 ..default()
             }
         ));
     });
-    /*
-    // Spawn Name Text
-    commands.spawn((
-        GUIScrollText {
-            id: String::from("text_ui")
-        },
-        TextBundle {
-            text: Text {
-                sections: vec![TextSection::new(
-                    "UNFILLED",
-                    TextStyle {
-                        font: asset_server.load("fonts/ALLER.ttf"),
-                        font_size: 40.0,
-                        color: Color::WHITE,
-                    })],
-                alignment: TextAlignment::Left,
-                linebreak_behaviour: BreakLineOn::WordBoundary
-            },
-            style: Style {
-                position_type: PositionType::Absolute,
-                position: UiRect {
-                    bottom: Val::Px(210.0),
-                    left: Val::Px(335.0),
-                    ..default()
-                },
-                ..default()
-            },
-            ..default()
-        }
-    ));*/
 }
-
+fn update_chatbox(
+    mut event_message: EventReader<CharacterSayEvent>,
+    mut textbox_parent_query: Query<(&mut Visibility, &GUISprite)>,
+    mut name_query: Query<(&mut Text, &GUIScrollText)>,
+) {
+    // Show the textbox again
+    for (mut visibility, text_box_object) in textbox_parent_query.iter_mut() {
+        if text_box_object.id == "textbox_background" {
+            *visibility = Visibility::Visible;
+        }
+    }
+    for ev in event_message.iter() {
+        for (mut name_text, id) in name_query.iter_mut() {
+            if id.id == "name_text" {
+                name_text.sections[0].value = ev.name.clone();
+            }
+            if id.id == "message_text" {
+                name_text.sections[0].value = ev.message.clone();
+            }
+        }
+    }
+}
 
 
 
@@ -344,6 +343,7 @@ enum Transition {
 impl Transition {
     fn call(
         &self, 
+        character_say_event: &mut EventWriter<CharacterSayEvent>,
         game_state: &mut ResMut<VisualNovelState>, 
         character_query: &mut Query<(
             &mut Character, 
@@ -360,10 +360,15 @@ impl Transition {
         ), (With<GUISprite>, Without<Character>, Without<Background>)>,
     ) {
         match self {
-            Transition::Say(_character_name, _msg) => {
-                todo!();
+            Transition::Say(character_name, msg) => {
+                info!("Calling Transition::Say");
+                character_say_event.send(CharacterSayEvent {
+                    name: character_name.to_owned(),
+                    message: msg.to_owned(),
+                });
             },
             Transition::SetEmotion(character_name, emotion) => {
+                info!("Calling Transition::SetEmotion");
                 for (mut character, sprites, mut current_sprite) in character_query.iter_mut() {
                     if character.name == *character_name {
                         character.emotion = emotion.to_owned();
@@ -377,6 +382,7 @@ impl Transition {
                 }
             }
             Transition::SetBackground(background_id) => {
+                info!("Calling Transition::SetBackground");
                 for (background_obj, mut current_sprite) in background_query.iter_mut() {
                     *current_sprite = background_obj.background_sprites.get(background_id)
                         .expect("'{character.outfit}' attribute does not exist!")
@@ -385,6 +391,7 @@ impl Transition {
                 }
             },
             Transition::SetGUI(gui_id, sprite_id) => {
+                info!("Calling Transition::SetGUI");
                 for (gui_obj, mut current_sprite) in gui_query.iter_mut() {
                     if gui_obj.id == *gui_id {
                         *current_sprite = game_state.gui_sprites.get(sprite_id)
@@ -410,6 +417,8 @@ impl Plugin for Compiler {
     }
 }
 fn pre_compile( mut game_state: ResMut<VisualNovelState>){
+    info!("Starting pre-compilation");
+
     /* PRECOMPILATION */
     let command_structure = Regex::new(r"(\w+)[\s$]").unwrap();
     let argument_structure = Regex::new(r"(\w+)=`([^`]*)`").unwrap();
@@ -507,9 +516,10 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
     game_state.transitions_iter = transitions.into_iter();
     game_state.blocking = false;
 
-    println!("[ Completed Compilation ]");
+    info!("Completed pre-compilation");
 }
 fn run_transitions ( 
+    mut character_say_event: EventWriter<CharacterSayEvent>,
     mut game_state: ResMut<VisualNovelState>, 
     mut character_query: Query<(
         &mut Character, 
@@ -528,7 +538,7 @@ fn run_transitions (
         }
         match game_state.transitions_iter.next() {
             Some(transition) => {
-                transition.call(&mut game_state, &mut character_query, &mut background_query, &mut gui_query);
+                transition.call(&mut character_say_event, &mut game_state, &mut character_query, &mut background_query, &mut gui_query);
             },
             None => {
                 return;
@@ -555,6 +565,7 @@ fn main() {
                 })
         ) 
         .init_resource::<VisualNovelState>()
+        .add_event::<CharacterSayEvent>()
         .add_startup_system(setup)
         .add_plugin(Compiler)
         .add_plugin(BackgroundController)

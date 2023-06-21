@@ -4,3 +4,4 @@ set type=`background` background=`main_classroom_noon`
 set type=`emotion` character=`Nayu` emotion=`LAUGHING`
 set type=`GUI` id=`textbox_background` sprite=`TEXTBOX_NASTYA`
 set type=`GUI` id=`namebox_background` sprite=`NAMEBOX`
+say character=`Nayu` msg=`hiya :kdasd; sd f a l ; j k a k l j ; a s l k ; f j l k ; a s j l ;fkjas ;lkf jas;ldfja;lskdj ;laskjf;lask d f ; l k a s j d f l ; k s a j f ; l asjfadsfdsljk; dafgljk;asfd;ljkafsdl;jkasdfj;lkasfd;ljkafsdlj;kasdf;ljkasfdjlk;sadf`
