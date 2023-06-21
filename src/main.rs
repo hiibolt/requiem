@@ -3,9 +3,7 @@ use bevy::{
     window::*,
     asset::{ Handle },
     sprite::{ Anchor },
-    render::{
-        RenderPlugin,
-    },
+    time::{ Stopwatch },
     text::{ BreakLineOn, Text2dBounds }
 };
 use std::fs;
@@ -33,8 +31,17 @@ struct Character {
 struct CharacterSprites {
     outfits: HashMap::<String, HashMap<String, Handle<Image>>>,
 }
-#[derive(Resource)]
-struct OpacityFadeTimer(Timer);
+
+
+
+/*
+ _                _                                   _
+| |__   __ _  ___| | ____ _ _ __ ___  _   _ _ __   __| |
+| '_ \ / _` |/ __| |/ / _` | '__/ _ \| | | | '_ \ / _` |
+| |_) | (_| | (__|   | (_| | | | (_) | |_| | | | | (_| |
+|_.__/ \__,_|\___|_|\_\__, |_|  \___/ \__,_|_| |_|\__,_|
+                      |___/
+*/
 
 #[derive(Component)]
 struct Background {
@@ -81,6 +88,13 @@ fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
 }
 
 
+/*
+      _           _
+  ___| |__   __ _| |_
+ / __| '_ \ / _` | __|
+| (__| | | | (_| | |_
+ \___|_| |_|\__,_|\__|
+*/
 #[derive(Component)]
 struct GUISprite {
     id: String,
@@ -88,17 +102,23 @@ struct GUISprite {
 #[derive(Component)]
 struct GUIScrollText {
     id: String,
+    message: String,
+    length: usize
 }
+
+#[derive(Resource)]
+struct ChatScrollStopwatch(Stopwatch);
 
 struct CharacterSayEvent {
     name: String,
-    message: String,
+    message: String
 }
 
 pub struct ChatController;
 impl Plugin for ChatController {
     fn build(&self, app: &mut App){
-        app.add_startup_system(import_gui_sprites)
+        app.insert_resource(ChatScrollStopwatch(Stopwatch::new()))
+            .add_startup_system(import_gui_sprites)
             .add_startup_system(spawn_chatbox)
             .add_system(update_chatbox);
     }
@@ -148,7 +168,9 @@ fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState
         ));
         parent.spawn((
             GUIScrollText {
-                id: String::from("name_text")
+                id: String::from("name_text"),
+                message: String::from("UNFILLED"),
+                length: 0
             },
             Text2dBundle {
                 text: Text {
@@ -170,7 +192,9 @@ fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState
         ));
         parent.spawn((
             GUIScrollText {
-                id: String::from("message_text")
+                id: String::from("message_text"),
+                message: String::from("UNFILLED"),
+                length: 0
             },
             Text2dBundle {
                 text: Text {
@@ -196,8 +220,12 @@ fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState
 fn update_chatbox(
     mut event_message: EventReader<CharacterSayEvent>,
     mut textbox_parent_query: Query<(&mut Visibility, &GUISprite)>,
-    mut name_query: Query<(&mut Text, &GUIScrollText)>,
+    mut name_query: Query<(&mut Text, &mut GUIScrollText)>,
+    mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
+    time: Res<Time>,
 ) {
+    scroll_stopwatch.0.tick(time.delta());
+
     // Show the textbox again
     for (mut visibility, text_box_object) in textbox_parent_query.iter_mut() {
         if text_box_object.id == "textbox_background" {
@@ -205,19 +233,36 @@ fn update_chatbox(
         }
     }
     for ev in event_message.iter() {
-        for (mut name_text, id) in name_query.iter_mut() {
-            if id.id == "name_text" {
+        for (mut name_text, mut scroll_text_obj) in name_query.iter_mut() {
+            if scroll_text_obj.id == "name_text" {
                 name_text.sections[0].value = ev.name.clone();
             }
-            if id.id == "message_text" {
-                name_text.sections[0].value = ev.message.clone();
+            if scroll_text_obj.id == "message_text" {
+                scroll_text_obj.message = ev.message.clone();
             }
+        }
+    }
+    for (mut name_text, scroll_text_obj) in name_query.iter_mut() {
+        if scroll_text_obj.id == "message_text" {
+            let mut original_string: String = (*scroll_text_obj).message.clone();
+            let length: u32 = (scroll_stopwatch.0.elapsed_secs() * 50.) as u32;
+            original_string.truncate(length as usize);
+            name_text.sections[0].value = original_string;
         }
     }
 }
 
 
 
+/*
+      _                          _
+  ___| |__   __ _ _ __ __ _  ___| |_ ___ _ __
+ / __| '_ \ / _` | '__/ _` |/ __| __/ _ | '__|
+| (__| | | | (_| | | | (_| | (__| ||  __| |
+ \___|_| |_|\__,_|_|  \__,_|\___|\__\___|_|
+*/
+#[derive(Resource)]
+struct OpacityFadeTimer(Timer);
 
 pub struct CharacterController;
 impl Plugin for CharacterController {
@@ -330,8 +375,14 @@ fn update_characters(
     }
 }*/
 
-
-
+/*
+                           _ _
+  ___ ___  _ __ ___  _ __ (_| | ___ _ __
+ / __/ _ \| '_ ` _ \| '_ \| | |/ _ | '__|
+| (_| (_) | | | | | | |_) | | |  __| |
+ \___\___/|_| |_| |_| .__/|_|_|\___|_|
+                    |_|
+*/
 enum Transition {
     Say(String, String),
     SetEmotion(String, String),
@@ -364,8 +415,9 @@ impl Transition {
                 info!("Calling Transition::Say");
                 character_say_event.send(CharacterSayEvent {
                     name: character_name.to_owned(),
-                    message: msg.to_owned(),
+                    message: msg.to_owned()
                 });
+                (*game_state).blocking = true;
             },
             Transition::SetEmotion(character_name, emotion) => {
                 info!("Calling Transition::SetEmotion");
@@ -547,6 +599,13 @@ fn run_transitions (
     }
 }
 
+/*
+                 _
+ _ __ ___   __ _(_)_ __
+| '_ ` _ \ / _` | | '_ \
+| | | | | | (_| | | | | |
+|_| |_| |_|\__,_|_|_| |_|
+*/
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins
