@@ -1,14 +1,17 @@
 use bevy::{
     prelude::*,
     window::*,
-    asset::{ Handle }
+    asset::{ Handle },
+    render::{
+        RenderPlugin,
+        settings::{ Backends}
+    }
 };
 use std::fs;
 use std::vec::IntoIter;
 use std::collections::HashMap;
 use regex::Regex;
 use json::parse;
-
 
 #[derive(Resource, Default)]
 struct VisualNovelState {
@@ -145,17 +148,17 @@ fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState
             id: String::from("text_ui")
         },
         TextBundle::from_section(
-            "Nayu_todo",
+            "UNFILLED",
             TextStyle {
                 font: asset_server.load("fonts/ALLER.ttf"),
-                font_size: 100.0,
+                font_size: 40.0,
                 color: Color::WHITE,
             },
         ).with_text_alignment(TextAlignment::Left)
             .with_style(Style {
                 position_type: PositionType::Absolute,
                 position: UiRect {
-                    bottom: Val::Px(215.0),
+                    bottom: Val::Px(210.0),
                     left: Val::Px(335.0),
                     ..default()
                 },
@@ -486,19 +489,27 @@ fn run_transitions (
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: String::from("Ettethread - Requiem"),
-                resolution: (1280., 800.).into(),
-                present_mode: PresentMode::AutoVsync,
-                // Tells wasm to resize the window according to the available canvas
-                fit_canvas_to_parent: true,
-                // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
-                prevent_default_event_handling: false,
+        .add_plugins(DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: String::from("Ettethread - Requiem"),
+                    resolution: (1280., 800.).into(),
+                    present_mode: PresentMode::AutoVsync,
+                    // Tells wasm to resize the window according to the available canvas
+                    fit_canvas_to_parent: true,
+                    // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
+                    prevent_default_event_handling: false,
+                    ..default()
+                }),
                 ..default()
-            }),
-            ..default()
-        })) 
+                })
+            .set(RenderPlugin {
+                wgpu_settings: bevy::render::settings::WgpuSettings {
+                    backends: Some(Backends::DX12),
+                        ..default()
+                    }
+                })
+        ) 
         .init_resource::<VisualNovelState>()
         .add_startup_system(setup)
         .add_plugin(Compiler)
