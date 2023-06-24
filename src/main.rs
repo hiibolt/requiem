@@ -48,10 +48,16 @@ struct Background {
     background_sprites: HashMap::<String, Handle<Image>>
 }
 
+struct BackgroundChangeEvent {
+    background_id: String
+}
+
 pub struct BackgroundController;
 impl Plugin for BackgroundController {
     fn build(&self, app: &mut App){
-        app.add_startup_system(import_backgrounds);
+        app.add_startup_system(import_backgrounds)
+            .add_event::<BackgroundChangeEvent>()
+            .add_system(update_background);
     }
 }
 fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
@@ -86,7 +92,23 @@ fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
         }
     ));
 }
+fn update_background(
+    mut background_query: Query<(
+        &Background, 
+        &mut Handle<Image>
+    ), (With<Background>, Without<Character>)>,
 
+    mut background_change_event: EventReader<BackgroundChangeEvent>,
+){
+    for ev in background_change_event.iter() {
+        for (background_obj, mut current_sprite) in background_query.iter_mut() {
+            *current_sprite = background_obj.background_sprites.get(&ev.background_id)
+                .expect("'{character.outfit}' attribute does not exist!")
+                .clone();
+            println!("[ Set background to '{}']", ev.background_id);
+        }
+    }
+}
 
 /*
       _           _
@@ -114,13 +136,21 @@ struct CharacterSayEvent {
     message: String
 }
 
+struct GUIChangeEvent {
+    gui_id: String,
+    sprite_id: String
+}
+
 pub struct ChatController;
 impl Plugin for ChatController {
     fn build(&self, app: &mut App){
         app.insert_resource(ChatScrollStopwatch(Stopwatch::new()))
             .add_startup_system(import_gui_sprites)
             .add_startup_system(spawn_chatbox)
-            .add_system(update_chatbox);
+            .add_event::<CharacterSayEvent>()
+            .add_event::<GUIChangeEvent>()
+            .add_system(update_chatbox)
+            .add_system(update_gui);
     }
 }
 fn import_gui_sprites( mut game_state: ResMut<VisualNovelState>, asset_server: Res<AssetServer> ){
@@ -251,7 +281,23 @@ fn update_chatbox(
         }
     }
 }
+fn update_gui(
+    mut event_change: EventReader<GUIChangeEvent>,
+    mut gui_query: Query<(&GUISprite, &mut Handle<Image>)>,
 
+    game_state: Res<VisualNovelState>
+) {
+    for ev in event_change.iter() {
+        for (gui_obj, mut current_sprite) in gui_query.iter_mut() {
+            if gui_obj.id == ev.gui_id {
+                *current_sprite = game_state.gui_sprites.get(&ev.sprite_id)
+                    .expect("GUI asset '{ev.sprite_id}' does not exist!")
+                    .clone();
+                println!("[ Set GUI asset '{}' to '{}']", ev.gui_id, ev.sprite_id);
+            }
+        }
+    }
+}
 
 
 /*
@@ -264,11 +310,18 @@ fn update_chatbox(
 #[derive(Resource)]
 struct OpacityFadeTimer(Timer);
 
+struct EmotionChangeEvent {
+    name: String,
+    emotion: String
+}
+
 pub struct CharacterController;
 impl Plugin for CharacterController {
     fn build(&self, app: &mut App){
         app.insert_resource(OpacityFadeTimer(Timer::from_seconds(0.005, TimerMode::Repeating)))
-            .add_startup_system(import_characters);
+            .add_startup_system(import_characters)
+            .add_event::<EmotionChangeEvent>()
+            .add_system(update_characters);
     }
 }
 fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
@@ -353,6 +406,29 @@ fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
         CharacterSprites { outfits }
     ));
 }
+fn update_characters(
+    mut character_query: Query<(
+        &mut Character, 
+        &CharacterSprites,
+        &mut Handle<Image>
+    ), (With<Character>, Without<Background>)>,
+
+    mut event_emotion_change: EventReader<EmotionChangeEvent>,
+){
+    for ev in event_emotion_change.iter() {
+        for (mut character, sprites, mut current_sprite) in character_query.iter_mut() {
+            if character.name == ev.name {
+                character.emotion = ev.emotion.to_owned();
+                *current_sprite = sprites.outfits.get(&character.outfit)
+                    .expect("'{character.outfit}' attribute does not exist!")
+                    .get(&character.emotion)
+                    .expect("'default_emotion' atttribute does not exist!")
+                    .clone();
+                println!("[ Set emotion of '{}' to '{}']", ev.name, ev.emotion);
+            }
+        }
+    }
+}
 /*
 fn update_characters(
     mut query: Query<(
@@ -395,20 +471,11 @@ impl Transition {
     fn call(
         &self, 
         character_say_event: &mut EventWriter<CharacterSayEvent>,
+        emotion_change_event: &mut EventWriter<EmotionChangeEvent>,
+        background_change_event: &mut EventWriter<BackgroundChangeEvent>,
+        gui_change_event: &mut EventWriter<GUIChangeEvent>,
+
         game_state: &mut ResMut<VisualNovelState>, 
-        character_query: &mut Query<(
-            &mut Character, 
-            &CharacterSprites,
-            &mut Handle<Image>
-        ), (With<Character>, Without<Background>)>,
-        background_query: &mut Query<(
-            &Background, 
-            &mut Handle<Image>
-        ), (With<Background>, Without<Character>)>,
-        gui_query: &mut Query<(
-            &GUISprite, 
-            &mut Handle<Image>
-        ), (With<GUISprite>, Without<Character>, Without<Background>)>,
     ) {
         match self {
             Transition::Say(character_name, msg) => {
@@ -421,37 +488,23 @@ impl Transition {
             },
             Transition::SetEmotion(character_name, emotion) => {
                 info!("Calling Transition::SetEmotion");
-                for (mut character, sprites, mut current_sprite) in character_query.iter_mut() {
-                    if character.name == *character_name {
-                        character.emotion = emotion.to_owned();
-                        *current_sprite = sprites.outfits.get(&character.outfit)
-                            .expect("'{character.outfit}' attribute does not exist!")
-                            .get(&character.emotion)
-                            .expect("'default_emotion' atttribute does not exist!")
-                            .clone();
-                        println!("[ Set emotion of '{character_name}' to '{emotion}']");
-                    }
-                }
+                emotion_change_event.send(EmotionChangeEvent {
+                    name: character_name.to_owned(),
+                    emotion: emotion.to_owned()
+                });
             }
             Transition::SetBackground(background_id) => {
                 info!("Calling Transition::SetBackground");
-                for (background_obj, mut current_sprite) in background_query.iter_mut() {
-                    *current_sprite = background_obj.background_sprites.get(background_id)
-                        .expect("'{character.outfit}' attribute does not exist!")
-                        .clone();
-                    println!("[ Set background to '{background_id}']");
-                }
+                background_change_event.send(BackgroundChangeEvent {
+                    background_id: background_id.to_owned()
+                });
             },
             Transition::SetGUI(gui_id, sprite_id) => {
                 info!("Calling Transition::SetGUI");
-                for (gui_obj, mut current_sprite) in gui_query.iter_mut() {
-                    if gui_obj.id == *gui_id {
-                        *current_sprite = game_state.gui_sprites.get(sprite_id)
-                            .expect("GUI asset '{sprite_id}' does not exist!")
-                            .clone();
-                        println!("[ Set GUI asset '{gui_id}' to '{sprite_id}']");
-                    }
-                }
+                gui_change_event.send(GUIChangeEvent {
+                    gui_id: gui_id.to_owned(),
+                    sprite_id: sprite_id.to_owned()
+                });
             },
             Transition::Log(msg) => println!("{msg}"),
             Transition::End => {
@@ -572,17 +625,11 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
 }
 fn run_transitions ( 
     mut character_say_event: EventWriter<CharacterSayEvent>,
-    mut game_state: ResMut<VisualNovelState>, 
-    mut character_query: Query<(
-        &mut Character, 
-        &CharacterSprites,
-        &mut Handle<Image>
-    ), (With<Character>, Without<Background>)>,
-    mut background_query: Query<(&Background, &mut Handle<Image>), (With<Background>, Without<Character>)>,
-    mut gui_query: Query<(
-        &GUISprite, 
-        &mut Handle<Image>
-    ), (With<GUISprite>, Without<Character>, Without<Background>)>
+    mut emotion_change_event: EventWriter<EmotionChangeEvent>,
+    mut background_change_event: EventWriter<BackgroundChangeEvent>,
+    mut gui_change_event: EventWriter<GUIChangeEvent>,
+
+    mut game_state: ResMut<VisualNovelState>,
 ) {
     loop {
         if game_state.blocking {
@@ -590,7 +637,13 @@ fn run_transitions (
         }
         match game_state.transitions_iter.next() {
             Some(transition) => {
-                transition.call(&mut character_say_event, &mut game_state, &mut character_query, &mut background_query, &mut gui_query);
+                transition.call(
+                    &mut character_say_event,
+                    &mut emotion_change_event,
+                    &mut background_change_event,
+                    &mut gui_change_event,
+
+                    &mut game_state,);
             },
             None => {
                 return;
@@ -624,7 +677,6 @@ fn main() {
                 })
         ) 
         .init_resource::<VisualNovelState>()
-        .add_event::<CharacterSayEvent>()
         .add_startup_system(setup)
         .add_plugin(Compiler)
         .add_plugin(BackgroundController)
