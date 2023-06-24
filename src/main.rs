@@ -124,8 +124,7 @@ struct GUISprite {
 #[derive(Component)]
 struct GUIScrollText {
     id: String,
-    message: String,
-    length: usize
+    message: String
 }
 
 #[derive(Resource)]
@@ -199,8 +198,7 @@ fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState
         parent.spawn((
             GUIScrollText {
                 id: String::from("name_text"),
-                message: String::from("UNFILLED"),
-                length: 0
+                message: String::from("UNFILLED")
             },
             Text2dBundle {
                 text: Text {
@@ -223,8 +221,7 @@ fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState
         parent.spawn((
             GUIScrollText {
                 id: String::from("message_text"),
-                message: String::from("UNFILLED"),
-                length: 0
+                message: String::from("UNFILLED")
             },
             Text2dBundle {
                 text: Text {
@@ -252,18 +249,24 @@ fn update_chatbox(
     mut textbox_parent_query: Query<(&mut Visibility, &GUISprite)>,
     mut name_query: Query<(&mut Text, &mut GUIScrollText)>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
+
+    mut game_state: ResMut<VisualNovelState>,
+
     time: Res<Time>,
+    window: Query<&Window, With<PrimaryWindow>>,
+    buttons: Res<Input<MouseButton>>,
 ) {
     scroll_stopwatch.0.tick(time.delta());
 
-    // Show the textbox again
-    for (mut visibility, text_box_object) in textbox_parent_query.iter_mut() {
-        if text_box_object.id == "textbox_background" {
-            *visibility = Visibility::Visible;
-        }
-    }
     for ev in event_message.iter() {
+        // Make the parent textbox visible
+        for (mut visibility, text_box_object) in textbox_parent_query.iter_mut() {
+            if text_box_object.id == "textbox_background" {
+                *visibility = Visibility::Visible;
+            }
+        }
         for (mut name_text, mut scroll_text_obj) in name_query.iter_mut() {
+            scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(0.));
             if scroll_text_obj.id == "name_text" {
                 name_text.sections[0].value = ev.name.clone();
             }
@@ -272,12 +275,53 @@ fn update_chatbox(
             }
         }
     }
+    // you need to find a way to remove the number of indent levels bro
     for (mut name_text, scroll_text_obj) in name_query.iter_mut() {
         if scroll_text_obj.id == "message_text" {
+            // Take the original string from the message object
             let mut original_string: String = (*scroll_text_obj).message.clone();
+
+            // Get the section of the string according to the ellapsed time
             let length: u32 = (scroll_stopwatch.0.elapsed_secs() * 50.) as u32;
+
+            // Return the section and apply it to the text object
             original_string.truncate(length as usize);
             name_text.sections[0].value = original_string;
+
+            match window.single().cursor_position() {
+                Some(position) => {
+                    let resolution = &window.single().resolution;
+                    let textbox_bounds: [f32; 4] = [
+                        ( resolution.width() / 2. ) - ( 796. / 2. ),
+                        ( resolution.width() / 2. ) + ( 796. / 2. ),
+                        ( resolution.height() / 2. ) - ( 155. / 2. ) - ( 275. ),
+                        ( resolution.height() / 2. ) + ( 155. / 2. ) - ( 275. ),
+                    ];
+                    if ( position.x > textbox_bounds[0] && position.x < textbox_bounds[1] ) &&
+                        ( position.y > textbox_bounds[2] && position.y < textbox_bounds[3] ) {
+                        if buttons.just_pressed(MouseButton::Left) {
+                            if length < (*scroll_text_obj).message.len() as u32 {
+                                // Skip message scrolling (bad code, should not be real)
+                                scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(100000000.));
+                            } else {
+                                println!("[ Player finished message ]");
+
+                                // Hide textbox parent object
+                                for (mut visibility, text_box_object) in textbox_parent_query.iter_mut() {
+                                    if text_box_object.id == "textbox_background" {
+                                        *visibility = Visibility::Hidden;
+                                    }
+                                }
+
+                                // Allow transitions to be run again
+                                game_state.blocking = false;
+                            }
+                        }
+                    }
+                },
+                None => {}
+            }
+            
         }
     }
 }
