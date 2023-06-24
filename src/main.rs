@@ -171,7 +171,7 @@ fn import_gui_sprites( mut game_state: ResMut<VisualNovelState>, asset_server: R
     }
     game_state.gui_sprites = gui_sprites;
 }
-fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState>, asset_server: Res<AssetServer>){
+fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
     // Spawn Backplate + Nameplate
     commands.spawn((
         GUISprite {
@@ -246,8 +246,8 @@ fn spawn_chatbox(mut commands: Commands, mut game_state: ResMut<VisualNovelState
 }
 fn update_chatbox(
     mut event_message: EventReader<CharacterSayEvent>,
-    mut textbox_parent_query: Query<(&mut Visibility, &GUISprite)>,
-    mut name_query: Query<(&mut Text, &mut GUIScrollText)>,
+    mut visibility_query: Query<(&mut Visibility, &GUISprite)>,
+    mut text_object_query: Query<(&mut Text, &mut GUIScrollText)>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 
     mut game_state: ResMut<VisualNovelState>,
@@ -260,12 +260,12 @@ fn update_chatbox(
 
     for ev in event_message.iter() {
         // Make the parent textbox visible
-        for (mut visibility, text_box_object) in textbox_parent_query.iter_mut() {
+        for (mut visibility, text_box_object) in visibility_query.iter_mut() {
             if text_box_object.id == "textbox_background" {
                 *visibility = Visibility::Visible;
             }
         }
-        for (mut name_text, mut scroll_text_obj) in name_query.iter_mut() {
+        for (mut name_text, mut scroll_text_obj) in text_object_query.iter_mut() {
             scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(0.));
             if scroll_text_obj.id == "name_text" {
                 name_text.sections[0].value = ev.name.clone();
@@ -276,7 +276,7 @@ fn update_chatbox(
         }
     }
     // you need to find a way to remove the number of indent levels bro
-    for (mut name_text, scroll_text_obj) in name_query.iter_mut() {
+    for (mut name_text, scroll_text_obj) in text_object_query.iter_mut() {
         if scroll_text_obj.id == "message_text" {
             // Take the original string from the message object
             let mut original_string: String = (*scroll_text_obj).message.clone();
@@ -307,7 +307,7 @@ fn update_chatbox(
                                 println!("[ Player finished message ]");
 
                                 // Hide textbox parent object
-                                for (mut visibility, text_box_object) in textbox_parent_query.iter_mut() {
+                                for (mut visibility, text_box_object) in visibility_query.iter_mut() {
                                     if text_box_object.id == "textbox_background" {
                                         *visibility = Visibility::Hidden;
                                     }
