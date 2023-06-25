@@ -9,13 +9,22 @@ use bevy::{
 use std::fs;
 use std::vec::IntoIter;
 use std::collections::HashMap;
+use std::env;
+
 use regex::Regex;
+
 use json::parse;
+use serde::{ Serialize, Deserialize };
+
 
 #[derive(Resource, Default)]
 struct VisualNovelState {
     gui_sprites: HashMap<String, Handle<Image>>,
+
     transitions_iter: IntoIter<Transition>,
+
+    past_messages: Vec<Message>,
+
     blocking: bool
 }
 
@@ -456,8 +465,10 @@ fn update_characters(
         &CharacterSprites,
         &mut Handle<Image>
     ), (With<Character>, Without<Background>)>,
-
     mut event_emotion_change: EventReader<EmotionChangeEvent>,
+    
+    mut text_object_query: Query<(&mut Text, &mut GUIScrollText)>,
+    mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 ){
     for ev in event_emotion_change.iter() {
         for (mut character, sprites, mut current_sprite) in character_query.iter_mut() {
@@ -473,27 +484,11 @@ fn update_characters(
         }
     }
 }
-/*
-fn update_characters(
-    mut query: Query<(
-        &mut Character, 
-        &CharacterSprites, 
-        &mut Transform, 
-        &mut Handle<Image>, 
-        &mut Sprite
-    )>,
-    time: Res<Time>,
-    mut timer: ResMut<OpacityFadeTimer>
-){
-    for (mut character, sprites, mut transform, mut current_sprite, mut sprite) in query.iter_mut() {
-        *current_sprite = sprites.outfits.get(&character.outfit)
-            .expect("'{character.outfit}' attribute does not exist!")
-            .get(&character.emotion)
-            .expect("'default_emotion' atttribute does not exist!")
-            .clone();
-        //let _ = *sprite.color.set_a(character.opacity);
-    }
-}*/
+
+
+
+
+
 
 /*
                            _ _
@@ -556,6 +551,43 @@ impl Transition {
             }
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Message {
+    role: String,
+    content: String
+}
+
+#[derive(Deserialize, Debug)]
+struct Choice {
+    index: usize,
+    message: Message,
+    finish_reason: String
+}
+
+#[derive(Deserialize, Debug)]
+struct Usage {
+    prompt_tokens: usize,
+    completion_tokens: usize,
+    total_tokens: usize
+}
+
+#[derive(Deserialize, Debug)]
+struct Response {
+    id: Option<String>,
+    object: Option<String>,
+    created: Option<u64>,
+    model: Option<String>,
+    choices: Option<Vec<Choice>>,
+    usage: Option<Usage>
+}
+
+#[derive(Serialize, Debug)]
+struct GPTTurboRequest {
+    model: String,
+    messages: Vec<Message>,
+    temperature: f32
 }
 
 pub struct Compiler;
