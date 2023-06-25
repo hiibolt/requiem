@@ -288,7 +288,7 @@ fn update_chatbox(
     for (mut name_text, scroll_text_obj) in text_object_query.iter_mut() {
         if scroll_text_obj.id == "message_text" {
             // Take the original string from the message object
-            let mut original_string: String = (*scroll_text_obj).message.clone();
+            let mut original_string: String = scroll_text_obj.message.clone();
 
             // Get the section of the string according to the ellapsed time
             let length: u32 = (scroll_stopwatch.0.elapsed_secs() * 50.) as u32;
@@ -297,38 +297,32 @@ fn update_chatbox(
             original_string.truncate(length as usize);
             name_text.sections[0].value = original_string;
 
-            match window.single().cursor_position() {
-                Some(position) => {
-                    let resolution = &window.single().resolution;
-                    let textbox_bounds: [f32; 4] = [
-                        ( resolution.width() / 2. ) - ( 796. / 2. ),
-                        ( resolution.width() / 2. ) + ( 796. / 2. ),
-                        ( resolution.height() / 2. ) - ( 155. / 2. ) - ( 275. ),
-                        ( resolution.height() / 2. ) + ( 155. / 2. ) - ( 275. ),
-                    ];
-                    if ( position.x > textbox_bounds[0] && position.x < textbox_bounds[1] ) &&
-                        ( position.y > textbox_bounds[2] && position.y < textbox_bounds[3] ) {
-                        if buttons.just_pressed(MouseButton::Left) {
-                            if length < (*scroll_text_obj).message.len() as u32 {
-                                // Skip message scrolling (bad code, should not be real)
-                                scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(100000000.));
-                            } else {
-                                println!("[ Player finished message ]");
+            if let Some(position) = window.single().cursor_position() {
+                let resolution = &window.single().resolution;
+                let textbox_bounds: [f32; 4] = [
+                    ( resolution.width() / 2. ) - ( 796. / 2. ),
+                    ( resolution.width() / 2. ) + ( 796. / 2. ),
+                    ( resolution.height() / 2. ) - ( 155. / 2. ) - ( 275. ),
+                    ( resolution.height() / 2. ) + ( 155. / 2. ) - ( 275. ),
+                ];
+                if ( position.x > textbox_bounds[0] && position.x < textbox_bounds[1] ) && ( position.y > textbox_bounds[2] && position.y < textbox_bounds[3] ) && buttons.just_pressed(MouseButton::Left) {
+                    if length < scroll_text_obj.message.len() as u32 {
+                        // Skip message scrolling (bad code, should not be real)
+                        scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(100000000.));
+                    } else {
+                        println!("[ Player finished message ]");
 
-                                // Hide textbox parent object
-                                for (mut visibility, text_box_object) in visibility_query.iter_mut() {
-                                    if text_box_object.id == "textbox_background" {
-                                        *visibility = Visibility::Hidden;
-                                    }
-                                }
-
-                                // Allow transitions to be run again
-                                game_state.blocking = false;
+                        // Hide textbox parent object
+                        for (mut visibility, text_box_object) in visibility_query.iter_mut() {
+                            if text_box_object.id == "textbox_background" {
+                                *visibility = Visibility::Hidden;
                             }
                         }
+
+                        // Allow transitions to be run again
+                        game_state.blocking = false;
                     }
-                },
-                None => {}
+                }
             }
             
         }
@@ -434,7 +428,7 @@ fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
 
     commands.spawn((
         Character {
-            name: name.clone(),
+            name,
             outfit: outfit.clone(),
             emotion: outfit.clone(),
             description: parsed_character["description"].as_str().expect("Missing 'name' attribute").to_owned(),
@@ -467,8 +461,8 @@ fn update_characters(
     ), (With<Character>, Without<Background>)>,
     mut event_emotion_change: EventReader<EmotionChangeEvent>,
     
-    mut text_object_query: Query<(&mut Text, &mut GUIScrollText)>,
-    mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
+    _text_object_query: Query<(&mut Text, &mut GUIScrollText)>,
+    _scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 ){
     for ev in event_emotion_change.iter() {
         for (mut character, sprites, mut current_sprite) in character_query.iter_mut() {
@@ -523,7 +517,7 @@ impl Transition {
                     name: character_name.to_owned(),
                     message: msg.to_owned()
                 });
-                (*game_state).blocking = true;
+                game_state.blocking = true;
             },
             Transition::SetEmotion(character_name, emotion) => {
                 info!("Calling Transition::SetEmotion");
@@ -628,8 +622,8 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
 
         
         // Adds each option from the command to the options hashmap
-        let mut args = argument_structure.captures_iter(line);
-        while let Some(capture) = args.next() {
+        let args = argument_structure.captures_iter(line);
+        for capture in args {
             let mut argument = capture.iter();
             println!("Field - {}", argument.next().unwrap().unwrap().as_str());
             let option: String = argument.next().expect("Missing field!").map_or(String::from(""), |m| m.as_str().to_owned());
@@ -644,7 +638,7 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
                 let msg = command_options.get("msg")
                     .expect("Missing 'msg' option!")
                     .to_owned();
-                return Transition::Log(msg);
+                Transition::Log(msg)
             },
             "say" => {
                 let character_id = command_options.get("character")
@@ -653,7 +647,7 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
                 let msg = command_options.get("msg")
                     .expect("Missing 'msg' option!")
                     .to_owned();
-                return Transition::Say(character_id, msg);
+                Transition::Say(character_id, msg)
             },
             "set" => {
                 let type_of = command_options.get("type")
@@ -667,13 +661,13 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
                         let emotion = command_options.get("emotion")
                             .expect("Missing 'emotion' option required for type 'emotion'!")
                             .to_owned();
-                        return Transition::SetEmotion(character_name, emotion);
+                        Transition::SetEmotion(character_name, emotion)
                     },
                     "background" => {
                         let background_id = command_options.get("background")
                             .expect("Missing 'background' option required for type 'background'!")
                             .to_owned();
-                        return Transition::SetBackground( background_id );
+                        Transition::SetBackground( background_id )
                     }
                     "GUI" => {
                         let gui_id = command_options.get("id")
@@ -682,13 +676,13 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
                         let sprite_id = command_options.get("sprite")
                             .expect("Missing 'sprite' option required for type 'GUI'!")
                             .to_owned();
-                        return Transition::SetGUI( gui_id, sprite_id );
+                        Transition::SetGUI( gui_id, sprite_id )
                     }
                     _ => panic!("Bad type '{type_of}'!")
                 }
             }
             "end" => {
-                return Transition::End;
+                Transition::End
             }
             _ => panic!("Bad command! {cmd_id}")
         }
