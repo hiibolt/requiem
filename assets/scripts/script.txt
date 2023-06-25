@@ -6,4 +6,5 @@ set type=`GUI` id=`textbox_background` sprite=`TEXTBOX_NASTYA`
 set type=`GUI` id=`namebox_background` sprite=`NAMEBOX`
 say character=`Nayu` msg=`hiya :kdasd; sd f a l ; j k a k l j ; a s l k ; f j l k ; a s j l ;fkjas ;lkf jas;ldfja;lskdj ;laskjf;lask d f ; l k a s j d f l ; k s a j f ; l asjfa dsfdsljk; daf gljk;asfd; ljka fsdl;jkas d fj;l k asfd;l jka fsdlj ;kasd f;lj kas fdjl k; sad f`
 log msg=`oh, what's up!`
+gpt character=`Nayu` goal=`Say hi in a friendly way to a classmate!`
 set type=`background` background=`main_classroom_day`

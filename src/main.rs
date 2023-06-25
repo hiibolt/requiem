@@ -139,6 +139,11 @@ struct GUIScrollText {
 #[derive(Resource)]
 struct ChatScrollStopwatch(Stopwatch);
 
+struct GPTSayEvent {
+    name: String,
+    goal: String
+}
+
 struct CharacterSayEvent {
     name: String,
     message: String
@@ -155,6 +160,7 @@ impl Plugin for ChatController {
         app.insert_resource(ChatScrollStopwatch(Stopwatch::new()))
             .add_startup_system(import_gui_sprites)
             .add_startup_system(spawn_chatbox)
+            .add_event::<GPTSayEvent>()
             .add_event::<CharacterSayEvent>()
             .add_event::<GUIChangeEvent>()
             .add_system(update_chatbox)
@@ -282,6 +288,11 @@ fn update_chatbox(
             if scroll_text_obj.id == "message_text" {
                 scroll_text_obj.message = ev.message.clone();
             }
+        }
+    }
+    for (visibility, text_box_object) in visibility_query.iter() {
+        if text_box_object.id == "textbox_background" && visibility == Visibility::Hidden {
+            return;
         }
     }
     // you need to find a way to remove the number of indent levels bro
@@ -497,6 +508,7 @@ enum Transition {
     SetEmotion(String, String),
     SetBackground(String),
     SetGUI(String, String),
+    GPTSay(String, String),
     Log(String),
     End
 }
@@ -507,6 +519,7 @@ impl Transition {
         emotion_change_event: &mut EventWriter<EmotionChangeEvent>,
         background_change_event: &mut EventWriter<BackgroundChangeEvent>,
         gui_change_event: &mut EventWriter<GUIChangeEvent>,
+        gpt_say_event: &mut EventWriter<GPTSayEvent>,
 
         game_state: &mut ResMut<VisualNovelState>, 
     ) {
@@ -539,6 +552,14 @@ impl Transition {
                     sprite_id: sprite_id.to_owned()
                 });
             },
+            Transition::GPTSay(character_name, character_goal) => {
+                info!("Calling Transition::GPTSay");
+                game_state.blocking = true;
+                gpt_say_event.send(GPTSayEvent {
+                    name: character_name.to_owned(),
+                    goal: character_goal.to_owned()
+                });
+            }
             Transition::Log(msg) => println!("{msg}"),
             Transition::End => {
                 todo!();
@@ -649,6 +670,15 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
                     .to_owned();
                 Transition::Say(character_id, msg)
             },
+            "gpt" => {
+                let character_name = command_options.get("character")
+                    .expect("Missing 'character' option!")
+                    .to_owned();
+                let character_goal = command_options.get("goal")
+                    .expect("Missing 'goal' option!")
+                    .to_owned();
+                Transition::GPTSay(character_name, character_goal)
+            },
             "set" => {
                 let type_of = command_options.get("type")
                     .expect("Missing 'type' option!")
@@ -698,6 +728,7 @@ fn run_transitions (
     mut emotion_change_event: EventWriter<EmotionChangeEvent>,
     mut background_change_event: EventWriter<BackgroundChangeEvent>,
     mut gui_change_event: EventWriter<GUIChangeEvent>,
+    mut gpt_say_event: EventWriter<GPTSayEvent>,
 
     mut game_state: ResMut<VisualNovelState>,
 ) {
@@ -712,6 +743,7 @@ fn run_transitions (
                     &mut emotion_change_event,
                     &mut background_change_event,
                     &mut gui_change_event,
+                    &mut gpt_say_event,
 
                     &mut game_state,);
             },
