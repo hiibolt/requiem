@@ -19,6 +19,8 @@ use serde::{ Serialize, Deserialize };
 
 #[derive(Resource, Default)]
 struct VisualNovelState {
+    playername: String,
+
     gui_sprites: HashMap<String, Handle<Image>>,
 
     transitions_iter: IntoIter<Transition>,
@@ -261,9 +263,12 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
 }
 fn update_chatbox(
     mut event_message: EventReader<CharacterSayEvent>,
+    mut gpt_message: EventReader<GPTSayEvent>,
+    character_query: Query<&Character>,
     mut visibility_query: Query<(&mut Visibility, &GUISprite)>,
     mut text_object_query: Query<(&mut Text, &mut GUIScrollText)>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
+
 
     mut game_state: ResMut<VisualNovelState>,
 
@@ -271,7 +276,84 @@ fn update_chatbox(
     window: Query<&Window, With<PrimaryWindow>>,
     buttons: Res<Input<MouseButton>>,
 ) {
-    scroll_stopwatch.0.tick(time.delta());
+    // Tick clock (must be after everything)
+    // basically if there's enough of a jump, it's not worth the stutters, preserve gameplay over ego :<
+    let to_tick = if time.delta_seconds() > 1. { std::time::Duration::from_secs_f32(0.) } else { time.delta() };
+    scroll_stopwatch.0.tick(to_tick);
+
+    for ev in gpt_message.iter() {
+        println!("[ GPT Say '{}' with the goal of '{}' ]", ev.name, ev.goal);
+        for character in character_query.iter() {
+            if character.name == ev.name {
+                // Grab the OpenAI API key
+                let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY needs to be set!");
+                
+                // Build the prompt for the request
+                let mut messages = Vec::<Message>::new();
+                messages.push(Message { 
+                    role: String::from("system"),
+                    content: ev.goal.clone()
+                });
+                messages.extend_from_slice(game_state.past_messages.as_slice());
+                // Build the request object to be serialized
+                let request = GPTTurboRequest {
+                    model: String::from("gpt-3.5-turbo"),
+                    messages,
+                    temperature: 0.7,
+                };
+
+                // Serialize the request
+                let serialized_request = serde_json::to_string(&request).unwrap();
+
+                println!("Serialized request: {serialized_request}");
+
+                // Make the request
+                let resp: String = ureq::post("https://api.openai.com/v1/chat/completions")
+                    .set("Authorization", &format!("Bearer {}", api_key))
+                    .set("Content-Type", "application/json")
+                    .send_string(&serialized_request)
+                    .unwrap()
+                    .into_string()
+                    .unwrap();
+
+                println!("Response: {resp}");
+
+                // Parse the response
+                let response_object: Response = serde_json::from_str(&resp).unwrap();
+
+                // so help me god what is this
+                // (i'm well aware this is doable with unsafe but like)
+                // no
+                // you stink past me
+                // well screw you too, now-future-not--past--me :<
+
+                // Make the parent textbox visible
+                for (mut visibility, text_box_object) in visibility_query.iter_mut() {
+                    if text_box_object.id == "textbox_background" {
+                        *visibility = Visibility::Visible;
+                    }
+                }
+                for (mut name_text, mut scroll_text_obj) in text_object_query.iter_mut() {
+                    // required, otherwise time to load response causes jump in scroll
+                    scroll_stopwatch.0.tick(time.delta());
+
+                    scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(0.));
+                    if scroll_text_obj.id == "name_text" {
+                        name_text.sections[0].value = ev.name.clone();
+                    }
+                    if scroll_text_obj.id == "message_text" {
+                        scroll_text_obj.message = response_object.choices[0].message.content.clone();
+                    }
+
+                    let role = if ev.name == "[_PLAYERNAME_]" { String::from("user") } else { String::from("assistant") };
+                    game_state.past_messages.push( Message {
+                        role,
+                        content: response_object.choices[0].message.content.clone(),
+                    });
+                }
+            }
+        }
+    }
 
     for ev in event_message.iter() {
         // Make the parent textbox visible
@@ -283,11 +365,18 @@ fn update_chatbox(
         for (mut name_text, mut scroll_text_obj) in text_object_query.iter_mut() {
             scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(0.));
             if scroll_text_obj.id == "name_text" {
-                name_text.sections[0].value = ev.name.clone();
+                let name = if ev.name == "[_PLAYERNAME_]" { game_state.playername.clone() } else { ev.name.clone() };
+                name_text.sections[0].value = name;
             }
             if scroll_text_obj.id == "message_text" {
                 scroll_text_obj.message = ev.message.clone();
             }
+
+            let role = if ev.name == "[_PLAYERNAME_]" { String::from("user") } else { String::from("assistant") };
+            game_state.past_messages.push( Message {
+                role,
+                content: ev.message.clone(),
+            });
         }
     }
     for (visibility, text_box_object) in visibility_query.iter() {
@@ -338,6 +427,7 @@ fn update_chatbox(
             
         }
     }
+
 }
 fn update_gui(
     mut event_change: EventReader<GUIChangeEvent>,
@@ -568,7 +658,7 @@ impl Transition {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Message {
     role: String,
     content: String
@@ -594,7 +684,7 @@ struct Response {
     object: Option<String>,
     created: Option<u64>,
     model: Option<String>,
-    choices: Option<Vec<Choice>>,
+    choices: Vec<Choice>,
     usage: Option<Usage>
 }
 
@@ -669,6 +759,12 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
                     .expect("Missing 'msg' option!")
                     .to_owned();
                 Transition::Say(character_id, msg)
+            },
+            "psay" => {
+                let msg = command_options.get("msg")
+                    .expect("Missing 'msg' option!")
+                    .to_owned();
+                Transition::Say(String::from("[_PLAYERNAME_]"), msg)
             },
             "gpt" => {
                 let character_name = command_options.get("character")
@@ -787,7 +883,13 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands) {
+fn setup(
+    mut commands: Commands,
+    mut game_state: ResMut<VisualNovelState>,
+) {
+    /* Config */
+    game_state.playername = String::from("Bolt");
+
     /* Basic Scene Setup */
     commands.spawn(Camera2dBundle::default());
 }
