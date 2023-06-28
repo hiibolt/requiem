@@ -26,8 +26,8 @@ Rust / NodeJS prototype
 - [x] Easy to learn bash-like syntax
 - [x] (not yet ported to Rust version) Scenes
 - [x] Easy pathing
-- [x] (not yet ported to Rust version) Artificially generatable dialog
-- [x] (not yet ported to Rust version) AI 'goal' system
+- [x] (partially ported, hyper-beta) Artificially generatable dialog
+- [x] AI 'goal' system
 - [x] (not yet ported to Rust version) AI filtering system
 
 
