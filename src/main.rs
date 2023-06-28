@@ -331,19 +331,23 @@ fn update_chatbox(
 
                 println!("[ Response: {} ]\n[ Usage: {} ]", response_object.choices[0].message.content.clone(),response_object.usage.unwrap().total_tokens.clone());
 
-                let message_structure = Regex::new(r"\[(.+)\]\[(.+)\]: (.+)").unwrap();
+                let message_structure = Regex::new(r"\[(.+)\]\[(.+)\]: ([\S\s]+)").unwrap();
                 let message_captures = message_structure.captures(&response_object.choices[0].message.content).unwrap();
                 
                 let character_name = message_captures.get(1).unwrap().as_str();
                 let emotion = message_captures.get(2).unwrap().as_str();
                 let response_unsplit = message_captures.get(3).unwrap().as_str();
-                let responses_split: Vec<&str> = response_unsplit.split("\n").collect();
+                let responses_split: Vec<&str> = response_unsplit.split("\n")
+                    .filter(|line| !line.is_empty())
+                    .collect();
+
+                println!("TEST TEST TEST: {}", response_unsplit);
 
                 // Update the emotion
-                game_state.extra_transitions.push(Transition::SetEmotion(character_name.to_owned(),emotion.to_owned()));
+                game_state.extra_transitions.insert(0,Transition::SetEmotion(character_name.to_owned(),emotion.to_owned()));
                 for message in responses_split {
-                    println!("[ NEW MESSAGE: {} ]",message);
-                    game_state.extra_transitions.push(Transition::Say(ev.name.clone(),String::from(message)));
+                    println!("[ NEW MESSAGE: {} ]", message);
+                    game_state.extra_transitions.insert(0,Transition::Say(ev.name.clone(),String::from(message)));
                 }
                 game_state.blocking = false;
             }
@@ -351,6 +355,8 @@ fn update_chatbox(
     }
 
     for ev in event_message.iter() {
+        game_state.blocking = true;
+
         // Make the parent textbox visible
         for (mut visibility, text_box_object) in visibility_query.iter_mut() {
             if text_box_object.id == "textbox_background" {
@@ -833,10 +839,10 @@ fn run_transitions (
     mut game_state: ResMut<VisualNovelState>,
 ) {
     loop {
-        if game_state.blocking {
-            return;
-        }
         while !game_state.extra_transitions.is_empty() {
+            if game_state.blocking {
+                return;
+            }
             let transition = game_state.extra_transitions.pop();
             transition.unwrap().call(
                 &mut character_say_event,
@@ -847,7 +853,6 @@ fn run_transitions (
 
                 &mut game_state,);
         }
-
         if game_state.blocking {
             return;
         }

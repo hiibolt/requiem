@@ -7,6 +7,11 @@ set type=`GUI` id=`namebox_background` sprite=`NAMEBOX`
 say character=`Nayu` msg=`Hi Bolt!`
 say character=`Nayu` msg=`How's it going?`
 psay msg=`Uhhh, okay! What's up?`
+say character=`Nayu` msg=`Bolt...can I vent to you for a little while?`
+psay msg=`Sure, Nayu.`
+say character=`Nayu` msg=`Well...uh...`
+psay msg=`It's okay, Nayu. I have nothing to do right now, so it's not an inconvenience.`
+say character=`Nayu` msg=`Okay, so...`
 log msg=`oh, what's up!`
 gpt character=`Nayu` goal=`Tell Bolt about your rough day!`
 set type=`background` background=`main_classroom_day`
