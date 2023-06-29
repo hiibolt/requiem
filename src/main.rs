@@ -140,8 +140,13 @@ struct GUIScrollText {
     message: String
 }
 
+#[derive(Component)]
+struct TypeBox;
+
 #[derive(Resource)]
 struct ChatScrollStopwatch(Stopwatch);
+
+struct GPTGetEvent {}
 
 struct GPTSayEvent {
     name: String,
@@ -165,6 +170,7 @@ impl Plugin for ChatController {
             .add_startup_system(import_gui_sprites)
             .add_startup_system(spawn_chatbox)
             .add_event::<GPTSayEvent>()
+            .add_event::<GPTGetEvent>()
             .add_event::<CharacterSayEvent>()
             .add_event::<GUIChangeEvent>()
             .add_system(update_chatbox)
@@ -262,15 +268,58 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
             }
         ));
     });
+
+    // Spawn typebox
+    commands.spawn((
+        GUISprite {
+            id: String::from("typebox_background")
+        },
+        SpriteBundle {
+            visibility: Visibility::Hidden,
+            transform: Transform::from_xyz(0., -275., 2.),
+            ..default()
+        },
+        TypeBox
+    ))
+    .with_children(|parent| {
+        parent.spawn((
+            GUIScrollText {
+                id: String::from("type_text"),
+                message: String::from("UNFILLED")
+            },
+            Text2dBundle {
+                text: Text {
+                    sections: vec![TextSection::new(
+                        "Start typing...",
+                        TextStyle {
+                            font: asset_server.load("fonts/BOLDITALIC.ttf"),
+                            font_size: 27.0,
+                            color: Color::WHITE,
+                        })],
+                    alignment: TextAlignment::Left,
+                    linebreak_behaviour: BreakLineOn::WordBoundary
+                },
+                text_anchor: Anchor::TopLeft,
+                text_2d_bounds: Text2dBounds{ size: Vec2 { x: 700., y: 20000.} },
+                transform: Transform::from_xyz(-350., 62., 3.),
+                visibility: Visibility::Inherited,
+                ..default()
+            }
+        ));
+    });
 }
 fn update_chatbox(
     mut event_message: EventReader<CharacterSayEvent>,
     mut gpt_message: EventReader<GPTSayEvent>,
+    mut get_message: EventReader<GPTGetEvent>,
     character_query: Query<&Character>,
-    mut visibility_query: Query<(&mut Visibility, &GUISprite)>,
-    mut text_object_query: Query<(&mut Text, &mut GUIScrollText)>,
+    mut text_visibility_query: Query<(&mut Visibility, &GUISprite), Without<TypeBox>>,
+    mut typing_visibility_query: Query<(&mut Visibility, &GUISprite), With<TypeBox>>,
+    mut text_object_query: Query<(&mut Text, &mut GUIScrollText), Without<TypeBox>>,
+    mut type_object_query: Query<(&mut Text, &mut GUIScrollText), With<TypeBox>>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 
+    mut events: EventReader<ReceivedCharacter>,
 
     mut game_state: ResMut<VisualNovelState>,
 
@@ -341,24 +390,80 @@ fn update_chatbox(
                     .filter(|line| !line.is_empty())
                     .collect();
 
-                println!("TEST TEST TEST: {}", response_unsplit);
-
                 // Update the emotion
                 game_state.extra_transitions.insert(0,Transition::SetEmotion(character_name.to_owned(),emotion.to_owned()));
                 for message in responses_split {
                     println!("[ NEW MESSAGE: {} ]", message);
                     game_state.extra_transitions.insert(0,Transition::Say(ev.name.clone(),String::from(message)));
                 }
+
                 game_state.blocking = false;
+                game_state.extra_transitions.insert(0,Transition::GPTGet);
             }
         }
     }
 
+    // Initializing the get event
+    for ev in get_message.iter() {
+        game_state.blocking = true;
+
+        println!("HIIIII");
+
+
+        // Make the parent textbox visible
+        for (mut visibility, text_box_object) in typing_visibility_query.iter_mut() {
+            println!("BELLLHLHLH");
+            if text_box_object.id == "typebox_background" {
+                *visibility = Visibility::Visible;
+            }
+        }
+        for (mut name_text, mut scroll_text_obj) in text_object_query.iter_mut() {
+            scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(0.));
+            if scroll_text_obj.id == "type_text" {
+                name_text.sections[0].value = String::from("");
+                for event in events.iter() {
+                    name_text.sections[0].value.push(event.char);
+                }
+            }
+        }
+    }
+    // Handle typing
+    for (mut name_text, mut scroll_text_obj) in text_object_query.iter_mut() {
+        if scroll_text_obj.id == "type_text" {
+            for event in events.iter() {
+                if name_text.sections[0].value.len() < 310 {
+                    if event.char.escape_default().collect::<String>() == "\\r" {
+                        println!("[ Player finished typing: {} ]", name_text.sections[0].value);
+
+                        // Hide textbox parent object
+                        for (mut visibility, text_box_object) in typing_visibility_query.iter_mut() {
+                            if text_box_object.id == "typebox_background" {
+                                *visibility = Visibility::Hidden;
+                            }
+                        }
+
+                        // Add the typed message
+                        let name = game_state.playername.clone();
+                        game_state.past_messages.push( Message {
+                            role: String::from("user"),
+                            content: format!("{}: {}", name, name_text.sections[0].value.clone()),
+                        });
+
+                        // Allow transitions to be run again
+                        game_state.blocking = false;
+                    }
+                    name_text.sections[0].value.push(event.char);
+                }
+            }
+        }
+    }
+
+    // Say events
     for ev in event_message.iter() {
         game_state.blocking = true;
 
         // Make the parent textbox visible
-        for (mut visibility, text_box_object) in visibility_query.iter_mut() {
+        for (mut visibility, text_box_object) in text_visibility_query.iter_mut() {
             if text_box_object.id == "textbox_background" {
                 *visibility = Visibility::Visible;
             }
@@ -379,7 +484,7 @@ fn update_chatbox(
                         emotion = format!("[{}]", character.emotion);
                     }
                 }
-                
+
                 game_state.past_messages.push( Message {
                     role,
                     content: format!("{}{}: {}", name, emotion, ev.message.clone()),
@@ -389,7 +494,7 @@ fn update_chatbox(
             }
         }
     }
-    for (visibility, text_box_object) in visibility_query.iter() {
+    for (visibility, text_box_object) in text_visibility_query.iter() {
         if text_box_object.id == "textbox_background" && visibility == Visibility::Hidden {
             return;
         }
@@ -423,7 +528,7 @@ fn update_chatbox(
                         println!("[ Player finished message ]");
 
                         // Hide textbox parent object
-                        for (mut visibility, text_box_object) in visibility_query.iter_mut() {
+                        for (mut visibility, text_box_object) in text_visibility_query.iter_mut() {
                             if text_box_object.id == "textbox_background" {
                                 *visibility = Visibility::Hidden;
                             }
@@ -608,6 +713,7 @@ enum Transition {
     SetEmotion(String, String),
     SetBackground(String),
     SetGUI(String, String),
+    GPTGet,
     GPTSay(String, String),
     Log(String),
     End
@@ -620,6 +726,7 @@ impl Transition {
         background_change_event: &mut EventWriter<BackgroundChangeEvent>,
         gui_change_event: &mut EventWriter<GUIChangeEvent>,
         gpt_say_event: &mut EventWriter<GPTSayEvent>,
+        gpt_get_event: &mut EventWriter<GPTGetEvent>,
 
         game_state: &mut ResMut<VisualNovelState>, 
     ) {
@@ -659,7 +766,12 @@ impl Transition {
                     name: character_name.to_owned(),
                     goal: character_goal.to_owned()
                 });
-            }
+            },
+            Transition::GPTGet => {
+                info!("Calling Transition::GPTGet");
+                game_state.blocking = true;
+                gpt_get_event.send(GPTGetEvent {});
+            },
             Transition::Log(msg) => println!("{msg}"),
             Transition::End => {
                 todo!();
@@ -835,6 +947,7 @@ fn run_transitions (
     mut background_change_event: EventWriter<BackgroundChangeEvent>,
     mut gui_change_event: EventWriter<GUIChangeEvent>,
     mut gpt_say_event: EventWriter<GPTSayEvent>,
+    mut gpt_get_event: EventWriter<GPTGetEvent>,
 
     mut game_state: ResMut<VisualNovelState>,
 ) {
@@ -850,6 +963,7 @@ fn run_transitions (
                 &mut background_change_event,
                 &mut gui_change_event,
                 &mut gpt_say_event,
+                &mut gpt_get_event,
 
                 &mut game_state,);
         }
@@ -864,6 +978,7 @@ fn run_transitions (
                     &mut background_change_event,
                     &mut gui_change_event,
                     &mut gpt_say_event,
+                    &mut gpt_get_event,
 
                     &mut game_state,);
             },
