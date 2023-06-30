@@ -316,7 +316,6 @@ fn update_chatbox(
     mut text_visibility_query: Query<(&mut Visibility, &GUISprite), Without<TypeBox>>,
     mut typing_visibility_query: Query<(&mut Visibility, &GUISprite), With<TypeBox>>,
     mut text_object_query: Query<(&mut Text, &mut GUIScrollText), Without<TypeBox>>,
-    mut type_object_query: Query<(&mut Text, &mut GUIScrollText), With<TypeBox>>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 
     mut events: EventReader<ReceivedCharacter>,
@@ -327,138 +326,154 @@ fn update_chatbox(
     window: Query<&Window, With<PrimaryWindow>>,
     buttons: Res<Input<MouseButton>>,
 ) {
+    /* QUICK FUNCTIONS */
+    // Returns a reference to a character object by its name
+    let find_character = |wanted_character_name: &String| -> Option<&Character> {
+        for character in character_query.iter() {
+            if character.name == *wanted_character_name {
+                return Some(character);
+            }
+        }
+        None
+    };
+    /* QUICK USE VARIABLES */
+    // Reference to SPECIFICALLY the typing text display object
+    let mut name_text_option: Option<&mut Text> = None;
+    for (name_text_, scroll_text_obj) in text_object_query.iter_mut() {
+        if scroll_text_obj.id == "type_text" {
+            name_text_option = Some(name_text_.into_inner());
+        }
+    }
+    let name_text = name_text_option.unwrap();
+
+    // Reference to SPECIFICALLY the typing text display object
+    let mut typebox_visibility_option: Option<&mut Visibility> = None;
+    for (visibility, text_box_object) in typing_visibility_query.iter_mut() {
+        if text_box_object.id == "typebox_background" {
+            typebox_visibility_option = Some(visibility.into_inner());
+        }
+    }
+    let typebox_visibility = typebox_visibility_option.unwrap();
+
+    
     // Tick clock (must be after everything)
     // basically if there's enough of a jump, it's not worth the stutters, preserve gameplay over ego :<
     let to_tick = if time.delta_seconds() > 1. { std::time::Duration::from_secs_f32(0.) } else { time.delta() };
     scroll_stopwatch.0.tick(to_tick);
 
+    /* GPT EVENTS [Transition::GPTSay] */
     for ev in gpt_message.iter() {
         println!("[ GPT Say '{}' with the goal of '{}' ]", ev.name, ev.goal);
-        for character in character_query.iter() {
-            if character.name == ev.name {
-                // Grab the OpenAI API key
-                let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY needs to be set!");
-                
-                // Build the prompt for the request
-                let mut messages = Vec::<Message>::new();
-                messages.push(Message { 
-                    role: String::from("system"),
-                    content: character.description.clone(),
-                });
-                messages.push(Message { 
-                    role: String::from("system"),
-                    content: format!("{}'s goal: {}", character.name, ev.goal.clone())
-                });
-                messages.push(Message { 
-                    role: String::from("system"),
-                    content: format!("Generate a message. Format: `[{}][{}]: blah blah blah etc`", character.name, character.emotions.join(" | "))
-                });
-                messages.extend_from_slice(game_state.past_messages.as_slice());
-                // Build the request object to be serialized
-                let request = GPTTurboRequest {
-                    model: String::from("gpt-3.5-turbo"),
-                    messages,
-                    temperature: 1.,
-                };
 
-                // Serialize the request
-                let serialized_request = serde_json::to_string(&request).unwrap();
+        // Grab the character matching the one notated in the event
+        let character = find_character(&ev.name).expect("Couldn't find associated character!");
+        
+        // Grab the OpenAI API key
+        let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY needs to be set!");
+        
+        // Build the prompt for the request
+        let mut messages = Vec::<Message>::new();
+        messages.push(Message { 
+            role: String::from("system"),
+            content: character.description.clone(),
+        });
+        messages.push(Message { 
+            role: String::from("system"),
+            content: format!("{}'s goal: {}", character.name, ev.goal.clone())
+        });
+        messages.push(Message { 
+            role: String::from("system"),
+            content: format!("Generate a message. Format: `[{}][{}]: blah blah blah etc`", character.name, character.emotions.join(" | "))
+        });
+        messages.extend_from_slice(game_state.past_messages.as_slice());
+        // Build the request object to be serialized
+        let request = GPTTurboRequest {
+            model: String::from("gpt-3.5-turbo"),
+            messages,
+            temperature: 1.,
+        };
 
-                println!("[ Sending GPT request to OpenAI ]");
+        // Serialize the request
+        let serialized_request = serde_json::to_string(&request).unwrap();
 
-                // Make the request
-                let resp: String = ureq::post("https://api.openai.com/v1/chat/completions")
-                    .set("Authorization", &format!("Bearer {}", api_key))
-                    .set("Content-Type", "application/json")
-                    .send_string(&serialized_request)
-                    .unwrap()
-                    .into_string()
-                    .unwrap();
+        println!("[ Sending GPT request to OpenAI ]");
 
-                // Parse the response
-                let response_object: Response = serde_json::from_str(&resp).unwrap();
+        // Make the request
+        let resp: String = ureq::post("https://api.openai.com/v1/chat/completions")
+            .set("Authorization", &format!("Bearer {}", api_key))
+            .set("Content-Type", "application/json")
+            .send_string(&serialized_request)
+            .unwrap()
+            .into_string()
+            .unwrap();
 
-                println!("[ Response: {} ]\n[ Usage: {} ]", response_object.choices[0].message.content.clone(),response_object.usage.unwrap().total_tokens.clone());
+        // Parse the response
+        let response_object: Response = serde_json::from_str(&resp).unwrap();
 
-                let message_structure = Regex::new(r"\[(.+)\]\[(.+)\]: ([\S\s]+)").unwrap();
-                let message_captures = message_structure.captures(&response_object.choices[0].message.content).unwrap();
-                
-                let character_name = message_captures.get(1).unwrap().as_str();
-                let emotion = message_captures.get(2).unwrap().as_str();
-                let response_unsplit = message_captures.get(3).unwrap().as_str();
-                let responses_split: Vec<&str> = response_unsplit.split("\n")
-                    .filter(|line| !line.is_empty())
-                    .collect();
+        println!("[ Response: {} ]\n[ Usage: {} ]", response_object.choices[0].message.content.clone(),response_object.usage.unwrap().total_tokens.clone());
 
-                // Update the emotion
-                game_state.extra_transitions.insert(0,Transition::SetEmotion(character_name.to_owned(),emotion.to_owned()));
-                for message in responses_split {
-                    println!("[ NEW MESSAGE: {} ]", message);
-                    game_state.extra_transitions.insert(0,Transition::Say(ev.name.clone(),String::from(message)));
-                }
+        let message_structure = Regex::new(r"\[(.+)\]\[(.+)\]: ([\S\s]+)").unwrap();
+        let message_captures = message_structure.captures(&response_object.choices[0].message.content).unwrap();
+        
+        let character_name = message_captures.get(1).unwrap().as_str();
+        let emotion = message_captures.get(2).unwrap().as_str();
+        let response_unsplit = message_captures.get(3).unwrap().as_str();
+        let responses_split: Vec<&str> = response_unsplit.split("\n")
+            .filter(|line| !line.is_empty())
+            .collect();
 
-                game_state.blocking = false;
-                game_state.extra_transitions.insert(0,Transition::GPTGet);
-            }
+        // Update the emotion
+        game_state.extra_transitions.insert(0,Transition::SetEmotion(character_name.to_owned(),emotion.to_owned()));
+        for message in responses_split {
+            println!("[ NEW MESSAGE: {} ]", message);
+            game_state.extra_transitions.insert(0,Transition::Say(String::from(character_name),String::from(message)));
         }
+
+        game_state.blocking = false;
+        game_state.extra_transitions.insert(0,Transition::GPTGet);
     }
 
-    // Initializing the get event
-    for ev in get_message.iter() {
+    /* GPT GET (Input) Event INITIALIZATION [Transition::GPTGet] */
+    for _ev in get_message.iter() {
         game_state.blocking = true;
 
-        println!("HIIIII");
+        // Make the parent typebox visible
+        *typebox_visibility = Visibility::Visible;
 
-
-        // Make the parent textbox visible
-        for (mut visibility, text_box_object) in typing_visibility_query.iter_mut() {
-            println!("BELLLHLHLH");
-            if text_box_object.id == "typebox_background" {
-                *visibility = Visibility::Visible;
-            }
-        }
-        for (mut name_text, mut scroll_text_obj) in text_object_query.iter_mut() {
-            scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(0.));
-            if scroll_text_obj.id == "type_text" {
-                name_text.sections[0].value = String::from("");
-                for event in events.iter() {
-                    name_text.sections[0].value.push(event.char);
-                }
-            }
-        }
+        // Reset the typebox
+        name_text.sections[0].value = String::from("");
     }
-    // Handle typing
-    for (mut name_text, mut scroll_text_obj) in text_object_query.iter_mut() {
-        if scroll_text_obj.id == "type_text" {
-            for event in events.iter() {
-                if name_text.sections[0].value.len() < 310 {
-                    if event.char.escape_default().collect::<String>() == "\\r" {
-                        println!("[ Player finished typing: {} ]", name_text.sections[0].value);
 
-                        // Hide textbox parent object
-                        for (mut visibility, text_box_object) in typing_visibility_query.iter_mut() {
-                            if text_box_object.id == "typebox_background" {
-                                *visibility = Visibility::Hidden;
-                            }
-                        }
+    /* GPT GET (Input) Event ONGOING [Transition::GPTGet] */
+    // For each character input
+    for event in events.iter() {
+        match event.char.escape_default().collect::<String>().as_str() {
+            "\\u{8}" => { // If BACKSPACE, remove a character
+                name_text.sections[0].value.pop();
+            },
+            "\\r" => { // If ENTER, finish the prompt
+                println!("[ Player finished typing: {} ]", name_text.sections[0].value);
 
-                        // Add the typed message
-                        let name = game_state.playername.clone();
-                        game_state.past_messages.push( Message {
-                            role: String::from("user"),
-                            content: format!("{}: {}", name, name_text.sections[0].value.clone()),
-                        });
+                // Hide textbox parent object
+                *typebox_visibility = Visibility::Hidden;
 
-                        // Allow transitions to be run again
-                        game_state.blocking = false;
-                    }
-                    name_text.sections[0].value.push(event.char);
-                }
+                // Add the typed message
+                let name = game_state.playername.clone();
+                game_state.past_messages.push( Message {
+                    role: String::from("user"),
+                    content: format!("{}: {}", name, name_text.sections[0].value.clone()),
+                });
+
+                // Allow transitions to be run again
+                game_state.blocking = false;
             }
+            _ => if name_text.sections[0].value.len() < 310 {
+                name_text.sections[0].value.push(event.char)
+            },
         }
     }
 
-    // Say events
+    /* STANDARD SAY EVENTS INITIALIZATION [Transition::Say] */
     for ev in event_message.iter() {
         game_state.blocking = true;
 
@@ -468,12 +483,19 @@ fn update_chatbox(
                 *visibility = Visibility::Visible;
             }
         }
+
+        // Update both the name and message text objects
         for (mut name_text, mut scroll_text_obj) in text_object_query.iter_mut() {
+            // Reset the scrolling timer
             scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(0.));
+
+            // Update the name
             if scroll_text_obj.id == "name_text" {
                 let name = if ev.name == "[_PLAYERNAME_]" { game_state.playername.clone() } else { ev.name.clone() };
                 name_text.sections[0].value = name;
             }
+
+            // Update the message text and log it as a Message
             if scroll_text_obj.id == "message_text" {
                 let role = if ev.name == "[_PLAYERNAME_]" { String::from("user") } else { String::from("assistant") };
                 let mut name = format!("[{}]", game_state.playername.clone());
@@ -494,6 +516,9 @@ fn update_chatbox(
             }
         }
     }
+
+    // (there needs to be a way to clean this up)
+    // If the textbox is hidden, ignore the next section dedicated to updating it
     for (visibility, text_box_object) in text_visibility_query.iter() {
         if text_box_object.id == "textbox_background" && visibility == Visibility::Hidden {
             return;
@@ -524,19 +549,19 @@ fn update_chatbox(
                     if length < scroll_text_obj.message.len() as u32 {
                         // Skip message scrolling (bad code, should not be real)
                         scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(100000000.));
-                    } else {
-                        println!("[ Player finished message ]");
-
-                        // Hide textbox parent object
-                        for (mut visibility, text_box_object) in text_visibility_query.iter_mut() {
-                            if text_box_object.id == "textbox_background" {
-                                *visibility = Visibility::Hidden;
-                            }
-                        }
-
-                        // Allow transitions to be run again
-                        game_state.blocking = false;
+                        return;
                     }
+                    println!("[ Player finished message ]");
+
+                    // Hide textbox parent object
+                    for (mut visibility, text_box_object) in text_visibility_query.iter_mut() {
+                        if text_box_object.id == "textbox_background" {
+                            *visibility = Visibility::Hidden;
+                        }
+                    }
+
+                    // Allow transitions to be run again
+                    game_state.blocking = false;
                 }
             }
             
