@@ -75,7 +75,7 @@ impl Plugin for BackgroundController {
 }
 fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
     let mut background_sprites: HashMap<String, Handle<Image>>= HashMap::new();
-
+ 
     let master_backgrounds_dir = std::env::current_dir()
         .expect("Failed to get current directory!")
         .join("assets")
