@@ -10,6 +10,5 @@ jobs:
     - uses: cachix/install-nix-action@v20
       with:
         github_access_token: ${{ secrets.GITHUB_TOKEN }}
-    - run: nix build
     - run: nix develop
     - run: cargo test
