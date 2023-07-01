@@ -466,7 +466,7 @@ fn update_chatbox(
         
         /* GPT CHECK - CHECK IF THE CHARACTER ACHIEVED THEIR GOAL! */
         // Build the prompt for the request
-        let prompt = format!("Decide whether {} achieved their goal of \"{}\".
+        let prompt = format!("Decide whether {} achieved their goal of \"{}\", and return the result in JSON form.
         
         Conversation:
         {}
@@ -478,7 +478,9 @@ fn update_chatbox(
         }}
         Possible goal statuses: \"YES\", \"NO\"
         
-        ", character.name, ev.goal, game_state.past_messages.clone().iter().map(|item| item.content.clone()).collect::<String>(), character.name );
+        Final Reponse:
+        {{\n\t\"character\": \"{}\",
+        ", character.name, ev.goal, game_state.past_messages.clone().iter().map(|item| item.content.clone()).collect::<String>(), character.name, character.name );
         // Build the request object to be serialized
         let request = CompletionRequest {
             model: String::from("text-davinci-003"),
@@ -500,15 +502,22 @@ fn update_chatbox(
             .into_string()
             .unwrap();
 
-        println!("[ Response: {} ]", resp);
         // Parse the response
         let response_object: CompletionResponse = serde_json::from_str(&resp).unwrap();
         let response_message = response_object.choices[0].text.clone();
 
-        println!("[ Response: {} ]\n[ Usage: {} ]", response_message, response_object.usage.unwrap().total_tokens.clone());
+        println!("[ Usage: {} ]", response_object.usage.unwrap().total_tokens.clone());
+        println!("[ Response: {} ]", response_message);
+        // Extract the goal status from the response
+        let goal_response_object: GoalResponse = serde_json::from_str( &(String::from("{") + &response_message.replace(|c: char| if c == '\n' { true } else { c.is_whitespace() }, "")) ).unwrap();
+        let goal_status = goal_response_object.goal_status.clone();
 
+        println!("[ Goal Status: {} ]", goal_status);
 
         game_state.blocking = false;
+        if goal_status == "YES" {
+            return;
+        }
         game_state.extra_transitions.insert(0,Transition::GPTGet(ev.name.clone(), ev.goal.clone())); // *! passes the past goal
     }
 
@@ -945,6 +954,11 @@ struct CompletionRequest {
     model: String,
     prompt: String,
     temperature: f32
+}
+
+#[derive(Deserialize, Debug)]
+struct GoalResponse {
+    goal_status: String
 }
 
 pub struct Compiler;
