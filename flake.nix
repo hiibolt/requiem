@@ -3,17 +3,14 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay.url = "github:oxalica/rust-overlay";
   };
   outputs = { self, nixpkgs, flake-utils }: 
     flake-utils.lib.eachDefaultSystem (system:
       let
-        rust_overlay = import (builtins.fetchTarball {
-            url = "https://github.com/oxalica/rust-overlay/archive/master.tar.gz";
-            sha256 = "sha256:1cad6b8qra5945g7ilbyqniwna4x1gm7v7lc058w3a478znn6f8s";
-        });
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [ rust_overlay ];
+          overlays = [ rust-overlay.overlays.default ];
         };
         rustVersion = "latest";
         rust = pkgs.rust-bin.stable.${rustVersion}.default.override {
