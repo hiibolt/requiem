@@ -26,9 +26,19 @@ Rust / NodeJS prototype
 - [x] Easy to learn bash-like syntax
 - [x] (not yet ported to Rust version) Scenes
 - [x] Easy pathing
-- [x] (partially ported, hyper-beta) Artificially generatable dialog
+- [x] Artificially generatable dialog
 - [x] AI 'goal' system
-- [x] (not yet ported to Rust version) AI filtering system
-
+- [x] (partially ported to Rust version) AI filtering system
+- [ ] Feedback-resolution loop (PID-AI)
+- [ ] Asynchronus time-based loops
+- [ ] Opacity shifting on transition
+- [ ] Opacity shifting on player entrance
+- [ ] Fancier text input
+- - [ ] Clear
+- - [ ] Blinking cursor
+- - [ ] Typing sound
+- - [ ] Character max indicator
+- - [ ] Hints on high response count
+- - [ ] Skill issues with players not knowing what to do
 
 Until the word WIP is purged from this README, this is NOT a release. This will be a long-running project.
