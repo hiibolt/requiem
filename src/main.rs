@@ -32,20 +32,6 @@ struct VisualNovelState {
     blocking: bool
 }
 
-#[derive(Component)]
-struct Character {
-    name: String,
-    outfit: String,
-    emotion: String,
-    description: String,
-    emotions: Vec<String>
-}
-#[derive(Component)]
-struct CharacterSprites {
-    outfits: HashMap::<String, HashMap<String, Handle<Image>>>,
-}
-
-
 
 /*
  _                _                                   _
@@ -55,12 +41,13 @@ struct CharacterSprites {
 |_.__/ \__,_|\___|_|\_\__, |_|  \___/ \__,_|_| |_|\__,_|
                       |___/
 */
-
+/* Components */
 #[derive(Component)]
 struct Background {
     background_sprites: HashMap::<String, Handle<Image>>
 }
 
+/* Events */
 struct BackgroundChangeEvent {
     background_id: String
 }
@@ -130,6 +117,7 @@ fn update_background(
 | (__| | | | (_| | |_
  \___|_| |_|\__,_|\__|
 */
+/* Components */
 #[derive(Component)]
 struct GUISprite {
     id: String,
@@ -139,31 +127,91 @@ struct GUIScrollText {
     id: String,
     message: String
 }
-
 #[derive(Component)]
 struct TypeBox;
 
+/* Resources */
 #[derive(Resource)]
 struct ChatScrollStopwatch(Stopwatch);
 
+/* Events */
 struct GPTGetEvent {
     past_character: String,
     past_goal: String
 }
-
 struct GPTSayEvent {
     name: String,
     goal: String
 }
-
 struct CharacterSayEvent {
     name: String,
     message: String
 }
-
 struct GUIChangeEvent {
     gui_id: String,
     sprite_id: String
+}
+
+/* Custom Types */
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct Message {
+    role: String,
+    content: String
+}
+#[derive(Deserialize, Debug)]
+struct ChatChoice {
+    //index: usize,
+    message: Message,
+    //finish_reason: String
+}
+#[derive(Deserialize, Debug)]
+struct CompletionChoice {
+    //index: usize,
+    text: String,
+    //finish_reason: String
+}
+#[derive(Deserialize, Debug)]
+struct Usage {
+    //prompt_tokens: usize,
+    //completion_tokens: usize,
+    total_tokens: usize
+}
+#[derive(Deserialize, Debug)]
+struct ChatResponse {
+    //id: Option<String>,
+    //object: Option<String>,
+    //created: Option<u64>,
+    //model: Option<String>,
+    choices: Vec<ChatChoice>,
+    usage: Option<Usage>
+}
+#[derive(Deserialize, Debug)]
+struct CompletionResponse {
+    //id: Option<String>,
+    //object: Option<String>,
+    //created: Option<u64>,
+    //model: Option<String>,
+    choices: Vec<CompletionChoice>,
+    usage: Option<Usage>
+}
+#[derive(Serialize, Debug)]
+struct GPTTurboRequest {
+    model: String,
+    messages: Vec<Message>,
+    temperature: f32
+}
+#[derive(Serialize, Debug)]
+struct CompletionRequest {
+    model: String,
+    prompt: String,
+    temperature: f32,
+    max_tokens: usize
+}
+#[derive(Deserialize, Debug)]
+struct GoalResponse {
+    reason: Option<String>,
+    goal_status: String,
+    advice: Option<String>,
 }
 
 pub struct ChatController;
@@ -692,9 +740,25 @@ fn update_gui(
 | (__| | | | (_| | | | (_| | (__| ||  __| |
  \___|_| |_|\__,_|_|  \__,_|\___|\__\___|_|
 */
+/* Components */
+#[derive(Component)]
+struct Character {
+    name: String,
+    outfit: String,
+    emotion: String,
+    description: String,
+    emotions: Vec<String>
+}
+#[derive(Component)]
+struct CharacterSprites {
+    outfits: HashMap::<String, HashMap<String, Handle<Image>>>,
+}
+
+/* Resources */
 #[derive(Resource)]
 struct OpacityFadeTimer(Timer);
 
+/* Events */
 struct EmotionChangeEvent {
     name: String,
     emotion: String
@@ -830,6 +894,7 @@ fn update_characters(
  \___\___/|_| |_| |_| .__/|_|_|\___|_|
                     |_|
 */
+/* Custom Types */
 enum Transition {
     Say(String, String),
     SetEmotion(String, String),
@@ -902,74 +967,7 @@ impl Transition {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Message {
-    role: String,
-    content: String
-}
 
-#[derive(Deserialize, Debug)]
-struct ChatChoice {
-    //index: usize,
-    message: Message,
-    //finish_reason: String
-}
-
-#[derive(Deserialize, Debug)]
-struct CompletionChoice {
-    //index: usize,
-    text: String,
-    //finish_reason: String
-}
-
-#[derive(Deserialize, Debug)]
-struct Usage {
-    //prompt_tokens: usize,
-    //completion_tokens: usize,
-    total_tokens: usize
-}
-
-#[derive(Deserialize, Debug)]
-struct ChatResponse {
-    //id: Option<String>,
-    //object: Option<String>,
-    //created: Option<u64>,
-    //model: Option<String>,
-    choices: Vec<ChatChoice>,
-    usage: Option<Usage>
-}
-
-#[derive(Deserialize, Debug)]
-struct CompletionResponse {
-    //id: Option<String>,
-    //object: Option<String>,
-    //created: Option<u64>,
-    //model: Option<String>,
-    choices: Vec<CompletionChoice>,
-    usage: Option<Usage>
-}
-
-#[derive(Serialize, Debug)]
-struct GPTTurboRequest {
-    model: String,
-    messages: Vec<Message>,
-    temperature: f32
-}
-
-#[derive(Serialize, Debug)]
-struct CompletionRequest {
-    model: String,
-    prompt: String,
-    temperature: f32,
-    max_tokens: usize
-}
-
-#[derive(Deserialize, Debug)]
-struct GoalResponse {
-    reason: Option<String>,
-    goal_status: String,
-    advice: Option<String>,
-}
 
 pub struct Compiler;
 impl Plugin for Compiler {
