@@ -411,7 +411,7 @@ fn update_chatbox(
             .unwrap();
 
         // Parse the response
-        let response_object: Response = serde_json::from_str(&resp).unwrap();
+        let response_object: ChatResponse = serde_json::from_str(&resp).unwrap();
         let response_message = response_object.choices[0].message.content.clone();
 
         println!("[ Response: {} ]\n[ Usage: {} ]", response_message, response_object.usage.unwrap().total_tokens.clone());
@@ -464,6 +464,49 @@ fn update_chatbox(
         }
         
         
+        /* GPT CHECK - CHECK IF THE CHARACTER ACHIEVED THEIR GOAL! */
+        // Build the prompt for the request
+        let prompt = format!("Decide whether {} achieved their goal of \"{}\".
+        
+        Conversation:
+        {}
+
+        Response example: 
+        {{
+            \"character\": \"{}\"
+            \"goal_status\": \"NO\"
+        }}
+        Possible goal statuses: \"YES\", \"NO\"
+        
+        ", character.name, ev.goal, game_state.past_messages.clone().iter().map(|item| item.content.clone()).collect::<String>(), character.name );
+        // Build the request object to be serialized
+        let request = CompletionRequest {
+            model: String::from("text-davinci-003"),
+            prompt,
+            temperature: 1.,
+        };
+
+        // Serialize the request
+        let serialized_request = serde_json::to_string(&request).unwrap();
+
+        println!("[ Sending GPT GOAL CHECK request to OpenAI ]");
+
+        // Make the request
+        let resp: String = ureq::post("https://api.openai.com/v1/completions")
+            .set("Authorization", &format!("Bearer {}", api_key))
+            .set("Content-Type", "application/json")
+            .send_string(&serialized_request)
+            .unwrap()
+            .into_string()
+            .unwrap();
+
+        println!("[ Response: {} ]", resp);
+        // Parse the response
+        let response_object: CompletionResponse = serde_json::from_str(&resp).unwrap();
+        let response_message = response_object.choices[0].text.clone();
+
+        println!("[ Response: {} ]\n[ Usage: {} ]", response_message, response_object.usage.unwrap().total_tokens.clone());
+
 
         game_state.blocking = false;
         game_state.extra_transitions.insert(0,Transition::GPTGet(ev.name.clone(), ev.goal.clone())); // *! passes the past goal
@@ -850,9 +893,16 @@ struct Message {
 }
 
 #[derive(Deserialize, Debug)]
-struct Choice {
+struct ChatChoice {
     //index: usize,
     message: Message,
+    //finish_reason: String
+}
+
+#[derive(Deserialize, Debug)]
+struct CompletionChoice {
+    //index: usize,
+    text: String,
     //finish_reason: String
 }
 
@@ -864,12 +914,22 @@ struct Usage {
 }
 
 #[derive(Deserialize, Debug)]
-struct Response {
+struct ChatResponse {
     //id: Option<String>,
     //object: Option<String>,
     //created: Option<u64>,
     //model: Option<String>,
-    choices: Vec<Choice>,
+    choices: Vec<ChatChoice>,
+    usage: Option<Usage>
+}
+
+#[derive(Deserialize, Debug)]
+struct CompletionResponse {
+    //id: Option<String>,
+    //object: Option<String>,
+    //created: Option<u64>,
+    //model: Option<String>,
+    choices: Vec<CompletionChoice>,
     usage: Option<Usage>
 }
 
@@ -877,6 +937,13 @@ struct Response {
 struct GPTTurboRequest {
     model: String,
     messages: Vec<Message>,
+    temperature: f32
+}
+
+#[derive(Serialize, Debug)]
+struct CompletionRequest {
+    model: String,
+    prompt: String,
     temperature: f32
 }
 
