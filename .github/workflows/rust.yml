@@ -1,22 +1,22 @@
-name: Rust
-
+name: "Test"
 on:
-  push:
-    branches: [ "master" ]
   pull_request:
-    branches: [ "master" ]
-
-env:
-  CARGO_TERM_COLOR: always
-
+  push:
 jobs:
-  build:
-
+  tests:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v3
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v3
+      - name: Install Nix
+        uses: cachix/install-nix-action@v18
+        with:
+          extra_nix_config: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+      - uses: workflow/nix-shell-action@v3
+        with:
+          flakes: .#hello,nixpkgs#docker
+          script: |
+            # Runs hello from a local flake.nix
+            hello
+            # Uses docker from the nixpkgs registry (see https://raw.githubusercontent.com/NixOS/flake-registry/master/flake-registry.json)
+            command -v docker
