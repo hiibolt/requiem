@@ -382,7 +382,7 @@ fn update_chatbox(
         });
         messages.push(Message { 
             role: String::from("system"),
-            content: format!("{}'s goal: {}", character.name, ev.goal.clone())
+            content: format!("{}'s goal: `{}`. Your goal is NOT yet achieved.", character.name, ev.goal.clone())
         });
         messages.push(Message { 
             role: String::from("system"),
@@ -466,16 +466,13 @@ fn update_chatbox(
         
         /* GPT CHECK - CHECK IF THE CHARACTER ACHIEVED THEIR GOAL! */
         // Build the prompt for the request
-        let prompt = format!("Decide whether {} achieved their goal of \"{}\", and return the result in JSON form.
+        let prompt = format!("Decide whether {} achieved their goal of \"{}\". Give advice to the character on what to do, and reason for why the goal isn't completed in JSON form.
         
         Conversation:
         {}
 
         Response example: 
-        {{
-            \"character\": \"{}\"
-            \"goal_status\": \"NO\"
-        }}
+        {{\n\t\"character\": \"{}\",\n\t\"reason\": \"reason why goal is or isnt completed\",\"advice\":\"advice for completing goal\" | null,\n\t\"goal_status\": \"NO\"\n}}
         Possible goal statuses: \"YES\", \"NO\"
         
         Final Reponse:
@@ -486,6 +483,7 @@ fn update_chatbox(
             model: String::from("text-davinci-003"),
             prompt,
             temperature: 1.,
+            max_tokens: 300,
         };
 
         // Serialize the request
@@ -509,7 +507,16 @@ fn update_chatbox(
         println!("[ Usage: {} ]", response_object.usage.unwrap().total_tokens.clone());
         println!("[ Response: {} ]", response_message);
         // Extract the goal status from the response
-        let goal_response_object: GoalResponse = serde_json::from_str( &(String::from("{") + &response_message.replace(|c: char| if c == '\n' { true } else { c.is_whitespace() }, "")) ).unwrap();
+        let goal_response_object: GoalResponse = serde_json::from_str( 
+            &(String::from("{") + &response_message.replace(|c: char| if c == '\n' { true } else { c.is_whitespace() }, "")) )
+            .unwrap_or_else(|_| {
+                info!("FAILED TO DECODE GOAL RESPONSE!\nRESPONSE: {}", response_message);
+                GoalResponse {
+                    reason: None,
+                    goal_status: String::from("NO"),
+                    advice: None,
+                }
+            });
         let goal_status = goal_response_object.goal_status.clone();
 
         println!("[ Goal Status: {} ]", goal_status);
@@ -953,12 +960,15 @@ struct GPTTurboRequest {
 struct CompletionRequest {
     model: String,
     prompt: String,
-    temperature: f32
+    temperature: f32,
+    max_tokens: usize
 }
 
 #[derive(Deserialize, Debug)]
 struct GoalResponse {
-    goal_status: String
+    reason: Option<String>,
+    goal_status: String,
+    advice: Option<String>,
 }
 
 pub struct Compiler;
