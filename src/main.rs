@@ -146,7 +146,10 @@ struct TypeBox;
 #[derive(Resource)]
 struct ChatScrollStopwatch(Stopwatch);
 
-struct GPTGetEvent {}
+struct GPTGetEvent {
+    past_character: String,
+    past_goal: String
+}
 
 struct GPTSayEvent {
     name: String,
@@ -383,7 +386,7 @@ fn update_chatbox(
         });
         messages.push(Message { 
             role: String::from("system"),
-            content: format!("Generate a message. Format: `[{}][{}]: blah blah blah etc`", character.name, character.emotions.join(" | "))
+            content: format!("Generate two messages. Format: `[{}][{}]: blah blah blah etc`", character.name, character.emotions.join(" | "))
         });
         messages.extend_from_slice(game_state.past_messages.as_slice());
         // Build the request object to be serialized
@@ -409,32 +412,65 @@ fn update_chatbox(
 
         // Parse the response
         let response_object: Response = serde_json::from_str(&resp).unwrap();
+        let response_message = response_object.choices[0].message.content.clone();
 
-        println!("[ Response: {} ]\n[ Usage: {} ]", response_object.choices[0].message.content.clone(),response_object.usage.unwrap().total_tokens.clone());
+        println!("[ Response: {} ]\n[ Usage: {} ]", response_message, response_object.usage.unwrap().total_tokens.clone());
 
+        // Matches [...][...]: ...
         let message_structure = Regex::new(r"\[(.+)\]\[(.+)\]: ([\S\s]+)").unwrap();
-        let message_captures = message_structure.captures(&response_object.choices[0].message.content).unwrap();
-        
-        let character_name = message_captures.get(1).unwrap().as_str();
-        let emotion = message_captures.get(2).unwrap().as_str();
-        let response_unsplit = message_captures.get(3).unwrap().as_str();
-        let responses_split: Vec<&str> = response_unsplit.split("\n")
-            .filter(|line| !line.is_empty())
-            .collect();
 
-        // Update the emotion
-        game_state.extra_transitions.insert(0,Transition::SetEmotion(character_name.to_owned(),emotion.to_owned()));
-        for message in responses_split {
-            println!("[ NEW MESSAGE: {} ]", message);
-            game_state.extra_transitions.insert(0,Transition::Say(String::from(character_name),String::from(message)));
+        /* 
+        Split the response by each message
+            ([...][...]: ...)
+
+            This allows for if the model generates dialog for
+            multiple characters, or on the behalf of the user
+        */
+        let all_messages_groups_string = message_structure.replace_all(&response_message, |caps: &regex::Captures| {
+                format!("~<>>[{}][{}]: {}", &caps[1], &caps[2], &caps[3])
+            });
+        let all_messages_groups = all_messages_groups_string
+            .split("~<>>")
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<&str>>();
+        for message_group in all_messages_groups {
+            println!("[ MESSAGE GROUP HEADER ]");
+            let message_captures = message_structure.captures(&message_group).unwrap();
+
+            let character_name = message_captures.get(1).unwrap().as_str();
+            let emotion = message_captures.get(2).unwrap().as_str();
+            
+            /* Splits the INDIVIDUAL message group by "\n" 
+                Example:
+                [...][...]: blah blah blah
+                blah blah blah
+                blah blah blah
+                vvvv   translates to  vvvv
+                [...][...]: blah blah blah
+                [...][...]: blah blah blah
+                [...][...]: blah blah blah
+            */
+            let response_unsplit = message_captures.get(3).unwrap().as_str();
+            let responses_split: Vec<&str> = response_unsplit.split("\n")
+                .filter(|line| !line.is_empty())
+                .collect();
+            
+            // Update the emotion
+            game_state.extra_transitions.insert(0,Transition::SetEmotion(character_name.to_owned(),emotion.to_owned()));
+            for message in responses_split {
+                println!("[ NEW MESSAGE: {} ]", message);
+                game_state.extra_transitions.insert(0,Transition::Say(String::from(character_name),String::from(message)));
+            }
         }
+        
+        
 
         game_state.blocking = false;
-        game_state.extra_transitions.insert(0,Transition::GPTGet);
+        game_state.extra_transitions.insert(0,Transition::GPTGet(ev.name.clone(), ev.goal.clone())); // *! passes the past goal
     }
 
     /* GPT GET (Input) Event INITIALIZATION [Transition::GPTGet] */
-    for _ev in get_message.iter() {
+    for ev in get_message.iter() {
         game_state.blocking = true;
 
         // Make the parent typebox visible
@@ -442,6 +478,8 @@ fn update_chatbox(
 
         // Reset the typebox
         name_text.sections[0].value = String::from("");
+
+        game_state.extra_transitions.insert(0,Transition::GPTSay(ev.past_character.clone(), ev.past_goal.clone())); // *! passes the past goal
     }
 
     /* GPT GET (Input) Event ONGOING [Transition::GPTGet] */
@@ -738,7 +776,7 @@ enum Transition {
     SetEmotion(String, String),
     SetBackground(String),
     SetGUI(String, String),
-    GPTGet,
+    GPTGet(String, String),
     GPTSay(String, String),
     Log(String),
     End
@@ -792,10 +830,10 @@ impl Transition {
                     goal: character_goal.to_owned()
                 });
             },
-            Transition::GPTGet => {
+            Transition::GPTGet(past_character, past_goal) => {
                 info!("Calling Transition::GPTGet");
                 game_state.blocking = true;
-                gpt_get_event.send(GPTGetEvent {});
+                gpt_get_event.send(GPTGetEvent {past_character: past_character.clone(), past_goal: past_goal.clone()});
             },
             Transition::Log(msg) => println!("{msg}"),
             Transition::End => {

@@ -7,8 +7,6 @@ set type=`GUI` id=`typebox_background` sprite=`TEXTBOX_LIBITINA`
 set type=`GUI` id=`namebox_background` sprite=`NAMEBOX`
 say character=`Nayu` msg=`Hi Bolt!`
 gpt character=`Nayu` goal=`Tell Bolt about your rough day!`
-gpt character=`Nayu` goal=`Tell Bolt about your rough day!`
-gpt character=`Nayu` goal=`Tell Bolt about your rough day!`
 say character=`Nayu` msg=`How's it going?`
 psay msg=`Uhhh, okay! What's up?`
 say character=`Nayu` msg=`Bolt...can I vent to you for a little while?`
