@@ -14,9 +14,7 @@ jobs:
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
       - uses: workflow/nix-shell-action@v3
         with:
-          flakes: .#hello,nixpkgs#docker
+          flakes: flake.nix
           script: |
             # Runs hello from a local flake.nix
-            hello
-            # Uses docker from the nixpkgs registry (see https://raw.githubusercontent.com/NixOS/flake-registry/master/flake-registry.json)
-            command -v docker
+            echo hiiiii
