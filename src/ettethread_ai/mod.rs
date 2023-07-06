@@ -1,4 +1,4 @@
-use serde::{ Serialize, Deserialize };
+use crate::{ Serialize, Deserialize };
 use crate::info;
 use crate::Character;
 use crate::VisualNovelState;
