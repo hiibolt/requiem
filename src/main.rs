@@ -17,9 +17,12 @@ use json::parse;
 use serde::{ Serialize, Deserialize };
 
 
+
 #[derive(Resource, Default)]
-struct VisualNovelState {
+pub struct VisualNovelState {
+    // Player-designated constants
     playername: String,
+    api_key: String,
 
     gui_sprites: HashMap<String, Handle<Image>>,
 
@@ -29,22 +32,8 @@ struct VisualNovelState {
 
     past_messages: Vec<Message>,
 
-    blocking: bool
+    blocking: bool,
 }
-
-#[derive(Component)]
-struct Character {
-    name: String,
-    outfit: String,
-    emotion: String,
-    description: String,
-    emotions: Vec<String>
-}
-#[derive(Component)]
-struct CharacterSprites {
-    outfits: HashMap::<String, HashMap<String, Handle<Image>>>,
-}
-
 
 
 /*
@@ -55,12 +44,13 @@ struct CharacterSprites {
 |_.__/ \__,_|\___|_|\_\__, |_|  \___/ \__,_|_| |_|\__,_|
                       |___/
 */
-
+/* Components */
 #[derive(Component)]
 struct Background {
     background_sprites: HashMap::<String, Handle<Image>>
 }
 
+/* Events */
 struct BackgroundChangeEvent {
     background_id: String
 }
@@ -82,11 +72,11 @@ fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
         .join("backgrounds");
     let background_paths = fs::read_dir(master_backgrounds_dir)
         .expect("Unable to read outfit folders!")
-        .map(|entry| entry.unwrap().path());
+        .map(|entry| entry.expect("Unable to read {entry}, IO error!").path());
     for background_path in background_paths {
         let background_name = background_path
-            .file_stem().expect("Must have a complete file name!")
-            .to_str().unwrap()
+            .file_stem().expect("Must have a complete background file name!")
+            .to_str().expect("Invalid Unicode! Ensure your background file names are UTF-8!")
             .to_string();
         let background_texture = asset_server.load(background_path);
 
@@ -130,6 +120,7 @@ fn update_background(
 | (__| | | | (_| | |_
  \___|_| |_|\__,_|\__|
 */
+/* Components */
 #[derive(Component)]
 struct GUISprite {
     id: String,
@@ -139,32 +130,16 @@ struct GUIScrollText {
     id: String,
     message: String
 }
-
 #[derive(Component)]
 struct TypeBox;
 
+/* Resources */
 #[derive(Resource)]
 struct ChatScrollStopwatch(Stopwatch);
 
-struct GPTGetEvent {
-    past_character: String,
-    past_goal: String
-}
-
-struct GPTSayEvent {
-    name: String,
-    goal: String
-}
-
-struct CharacterSayEvent {
-    name: String,
-    message: String
-}
-
-struct GUIChangeEvent {
-    gui_id: String,
-    sprite_id: String
-}
+/* Module Imports */
+mod ettethread_ai;
+use crate::ettethread_ai::*;
 
 pub struct ChatController;
 impl Plugin for ChatController {
@@ -188,11 +163,18 @@ fn import_gui_sprites( mut game_state: ResMut<VisualNovelState>, asset_server: R
         .join("gui");
     let gui_sprite_paths = fs::read_dir(master_gui_dir)
         .expect("Unable to read outfit folders!")
-        .map(|entry| entry.unwrap().path());
+        .filter_map(|entry| {
+            if let Ok(entry) = entry {
+                Some(entry.path())
+            }else {
+                info!("Unable to read file! Error: `{:?}`", entry);
+                None
+            }
+        });
     for gui_sprite_path in gui_sprite_paths {
         let file_name = gui_sprite_path
-            .file_stem().unwrap()
-            .to_str().unwrap()
+            .file_stem().expect("Sprite file must have complete name!")
+            .to_str().expect("Sprite file name must be valid UTF-8!")
             .to_string();
         println!("[ Importing GUI asset '{file_name}' ]");
         gui_sprites.insert(file_name, asset_server.load(gui_sprite_path));
@@ -347,7 +329,7 @@ fn update_chatbox(
             name_text_option = Some(name_text_.into_inner());
         }
     }
-    let name_text = name_text_option.unwrap();
+    let name_text = name_text_option.expect("MISSING GUI OBJECT WITH ID 'type_text'!");
 
     // Reference to SPECIFICALLY the typing text display object
     let mut typebox_visibility_option: Option<&mut Visibility> = None;
@@ -356,7 +338,7 @@ fn update_chatbox(
             typebox_visibility_option = Some(visibility.into_inner());
         }
     }
-    let typebox_visibility = typebox_visibility_option.unwrap();
+    let typebox_visibility = typebox_visibility_option.expect("MISSING GUI OBJECT WITH ID 'typebox_background'!");
 
     
     // Tick clock (must be after everything)
@@ -366,166 +348,28 @@ fn update_chatbox(
 
     /* GPT EVENTS [Transition::GPTSay] */
     for ev in gpt_message.iter() {
-        println!("[ GPT Say '{}' with the goal of '{}' ]", ev.name, ev.goal);
+        // Grab the character by reference matching the one notated in the event
+        let character: &Character = find_character(&ev.name).expect("Couldn't find associated character!");
 
-        // Grab the character matching the one notated in the event
-        let character = find_character(&ev.name).expect("Couldn't find associated character!");
-        
-        // Grab the OpenAI API key
-        let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY needs to be set!");
-        
-        // Build the prompt for the request
-        let mut messages = Vec::<Message>::new();
-        messages.push(Message { 
-            role: String::from("system"),
-            content: character.description.clone(),
-        });
-        messages.push(Message { 
-            role: String::from("system"),
-            content: format!("{}'s goal: `{}`. Your goal is NOT yet achieved.", character.name, ev.goal.clone())
-        });
-        messages.push(Message { 
-            role: String::from("system"),
-            content: format!("Generate two messages. Format: `[{}][{}]: blah blah blah etc`", character.name, character.emotions.join(" | "))
-        });
-        messages.extend_from_slice(game_state.past_messages.as_slice());
-        // Build the request object to be serialized
-        let request = GPTTurboRequest {
-            model: String::from("gpt-3.5-turbo"),
-            messages,
-            temperature: 1.,
-        };
-
-        // Serialize the request
-        let serialized_request = serde_json::to_string(&request).unwrap();
-
-        println!("[ Sending GPT request to OpenAI ]");
-
-        // Make the request
-        let resp: String = ureq::post("https://api.openai.com/v1/chat/completions")
-            .set("Authorization", &format!("Bearer {}", api_key))
-            .set("Content-Type", "application/json")
-            .send_string(&serialized_request)
-            .unwrap()
-            .into_string()
-            .unwrap();
-
-        // Parse the response
-        let response_object: ChatResponse = serde_json::from_str(&resp).unwrap();
-        let response_message = response_object.choices[0].message.content.clone();
-
-        println!("[ Response: {} ]\n[ Usage: {} ]", response_message, response_object.usage.unwrap().total_tokens.clone());
-
-        // Matches [...][...]: ...
-        let message_structure = Regex::new(r"\[(.+)\]\[(.+)\]: ([\S\s]+)").unwrap();
-
-        /* 
-        Split the response by each message
-            ([...][...]: ...)
-
-            This allows for if the model generates dialog for
-            multiple characters, or on the behalf of the user
-        */
-        let all_messages_groups_string = message_structure.replace_all(&response_message, |caps: &regex::Captures| {
-                format!("~<>>[{}][{}]: {}", &caps[1], &caps[2], &caps[3])
-            });
-        let all_messages_groups = all_messages_groups_string
-            .split("~<>>")
-            .filter(|line| !line.is_empty())
-            .collect::<Vec<&str>>();
-        for message_group in all_messages_groups {
-            println!("[ MESSAGE GROUP HEADER ]");
-            let message_captures = message_structure.captures(&message_group).unwrap();
-
-            let character_name = message_captures.get(1).unwrap().as_str();
-            let emotion = message_captures.get(2).unwrap().as_str();
-            
-            /* Splits the INDIVIDUAL message group by "\n" 
-                Example:
-                [...][...]: blah blah blah
-                blah blah blah
-                blah blah blah
-                vvvv   translates to  vvvv
-                [...][...]: blah blah blah
-                [...][...]: blah blah blah
-                [...][...]: blah blah blah
-            */
-            let response_unsplit = message_captures.get(3).unwrap().as_str();
-            let responses_split: Vec<&str> = response_unsplit.split("\n")
-                .filter(|line| !line.is_empty())
-                .collect();
-            
-            // Update the emotion
-            game_state.extra_transitions.insert(0,Transition::SetEmotion(character_name.to_owned(),emotion.to_owned()));
-            for message in responses_split {
-                println!("[ NEW MESSAGE: {} ]", message);
-                game_state.extra_transitions.insert(0,Transition::Say(String::from(character_name),String::from(message)));
-            }
-        }
-        
+        /* GPT GENERATE - GENERATE MESSAGES FOR PLAYER INTERACTION */
+        // Builds a full chat transition with the intent of completing a set goal
+        // (contained in the event)
+        let mut ret = generate_chat_transitions(&character, &game_state, &ev);
+        game_state.extra_transitions.append(&mut ret);
         
         /* GPT CHECK - CHECK IF THE CHARACTER ACHIEVED THEIR GOAL! */
-        // Build the prompt for the request
-        let prompt = format!("Decide whether {} achieved their goal of \"{}\". Give advice to the character on what to do, and reason for why the goal isn't completed in JSON form.
-        
-        Conversation:
-        {}
-
-        Response example: 
-        {{\n\t\"character\": \"{}\",\n\t\"reason\": \"reason why goal is or isnt completed\",\"advice\":\"advice for completing goal\" | null,\n\t\"goal_status\": \"NO\"\n}}
-        Possible goal statuses: \"YES\", \"NO\"
-        
-        Final Reponse:
-        {{\n\t\"character\": \"{}\",
-        ", character.name, ev.goal, game_state.past_messages.clone().iter().map(|item| item.content.clone()).collect::<String>(), character.name, character.name );
-        // Build the request object to be serialized
-        let request = CompletionRequest {
-            model: String::from("text-davinci-003"),
-            prompt,
-            temperature: 1.,
-            max_tokens: 300,
+        // Any errors here should literally result in continuation of the game.
+        // It's way easier to let the next prompt be generated, 
+        // and let the player see the dialog that was just generated anyway
+        // (plus, it could be OpenAI rate limits)
+        if let Some(goal_status) = determine_goal_status(&character, &game_state, &ev){
+            println!("[ Goal Status: {} ]", goal_status);
+            if !goal_status {
+                game_state.extra_transitions.insert(0,Transition::GPTGet(ev.name.clone(), ev.goal.clone())); // *! passes the past goal
+            }
         };
 
-        // Serialize the request
-        let serialized_request = serde_json::to_string(&request).unwrap();
-
-        println!("[ Sending GPT GOAL CHECK request to OpenAI ]");
-
-        // Make the request
-        let resp: String = ureq::post("https://api.openai.com/v1/completions")
-            .set("Authorization", &format!("Bearer {}", api_key))
-            .set("Content-Type", "application/json")
-            .send_string(&serialized_request)
-            .unwrap()
-            .into_string()
-            .unwrap();
-
-        // Parse the response
-        let response_object: CompletionResponse = serde_json::from_str(&resp).unwrap();
-        let response_message = response_object.choices[0].text.clone();
-
-        println!("[ Usage: {} ]", response_object.usage.unwrap().total_tokens.clone());
-        println!("[ Response: {} ]", response_message);
-        // Extract the goal status from the response
-        let goal_response_object: GoalResponse = serde_json::from_str( 
-            &(String::from("{") + &response_message.replace(|c: char| if c == '\n' { true } else { c.is_whitespace() }, "")) )
-            .unwrap_or_else(|_| {
-                info!("FAILED TO DECODE GOAL RESPONSE!\nRESPONSE: {}", response_message);
-                GoalResponse {
-                    reason: None,
-                    goal_status: String::from("NO"),
-                    advice: None,
-                }
-            });
-        let goal_status = goal_response_object.goal_status.clone();
-
-        println!("[ Goal Status: {} ]", goal_status);
-
         game_state.blocking = false;
-        if goal_status == "YES" {
-            return;
-        }
-        game_state.extra_transitions.insert(0,Transition::GPTGet(ev.name.clone(), ev.goal.clone())); // *! passes the past goal
     }
 
     /* GPT GET (Input) Event INITIALIZATION [Transition::GPTGet] */
@@ -692,9 +536,25 @@ fn update_gui(
 | (__| | | | (_| | | | (_| | (__| ||  __| |
  \___|_| |_|\__,_|_|  \__,_|\___|\__\___|_|
 */
+/* Components */
+#[derive(Component)]
+pub struct Character {
+    name: String,
+    outfit: String,
+    emotion: String,
+    description: String,
+    emotions: Vec<String>
+}
+#[derive(Component)]
+struct CharacterSprites {
+    outfits: HashMap::<String, HashMap<String, Handle<Image>>>,
+}
+
+/* Resources */
 #[derive(Resource)]
 struct OpacityFadeTimer(Timer);
 
+/* Events */
 struct EmotionChangeEvent {
     name: String,
     emotion: String
@@ -720,10 +580,13 @@ fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
         .join("Nayu");
     let outfit_dirs = fs::read_dir(master_character_dir)
         .expect("Unable to read outfit folders!")
-        .filter_map(|entry| {
-            let entry = entry.unwrap();
-            if entry.file_type().unwrap().is_dir() {
-                Some(entry.path())
+        .filter_map(|entry_result| {
+            let entry = entry_result.ok()?;
+            if let Ok(file_type) = entry.file_type() {
+                match file_type.is_dir() {
+                    true => return Some(entry.path()),
+                    false => return None
+                }
             } else {
                 None
             }
@@ -731,17 +594,24 @@ fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
     for outfit_dir in outfit_dirs {
         let mut emotion_sprites = HashMap::<String, Handle<Image>>::new();
         let outfit_name = outfit_dir
-            .file_name().unwrap()
-            .to_str().unwrap()
-            .to_string();
+            .file_name().expect("No directory name!")
+            .to_str().expect("Malformed UTF-8 in directory name, please verify it meets UTF-8 validity!")
+            .to_owned();
         
         let sprite_paths = fs::read_dir(outfit_dir)
             .expect("No character data!")
-            .map(|entry| entry.unwrap().path());
+            .filter_map(|entry| {
+                if let Ok(entry) = entry {
+                    Some(entry.path())
+                }else{
+                    info!("Failed to read file data of `{:?}`!", entry);
+                    None
+                }
+            });
         for sprite_path in sprite_paths {
             let sprite_name = sprite_path
-                .file_stem().unwrap()
-                .to_str().unwrap()
+                .file_stem().expect("No file name! Your emotion sprites MUST have a label to be able to be referred to!")
+                .to_str().expect("Malformed UTF-8 in file name, please verify it meets UTF-8 validity!")
                 .to_string();
             let file_texture = asset_server.load(sprite_path);
 
@@ -830,7 +700,11 @@ fn update_characters(
  \___\___/|_| |_| |_| .__/|_|_|\___|_|
                     |_|
 */
-enum Transition {
+mod ettethread_compiler;
+use crate::ettethread_compiler::*;
+
+/* Custom Types */
+pub enum Transition {
     Say(String, String),
     SetEmotion(String, String),
     SetBackground(String),
@@ -886,7 +760,8 @@ impl Transition {
                 game_state.blocking = true;
                 gpt_say_event.send(GPTSayEvent {
                     name: character_name.to_owned(),
-                    goal: character_goal.to_owned()
+                    goal: character_goal.to_owned(),
+                    advice: None
                 });
             },
             Transition::GPTGet(past_character, past_goal) => {
@@ -901,76 +776,6 @@ impl Transition {
         }
     }
 }
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Message {
-    role: String,
-    content: String
-}
-
-#[derive(Deserialize, Debug)]
-struct ChatChoice {
-    //index: usize,
-    message: Message,
-    //finish_reason: String
-}
-
-#[derive(Deserialize, Debug)]
-struct CompletionChoice {
-    //index: usize,
-    text: String,
-    //finish_reason: String
-}
-
-#[derive(Deserialize, Debug)]
-struct Usage {
-    //prompt_tokens: usize,
-    //completion_tokens: usize,
-    total_tokens: usize
-}
-
-#[derive(Deserialize, Debug)]
-struct ChatResponse {
-    //id: Option<String>,
-    //object: Option<String>,
-    //created: Option<u64>,
-    //model: Option<String>,
-    choices: Vec<ChatChoice>,
-    usage: Option<Usage>
-}
-
-#[derive(Deserialize, Debug)]
-struct CompletionResponse {
-    //id: Option<String>,
-    //object: Option<String>,
-    //created: Option<u64>,
-    //model: Option<String>,
-    choices: Vec<CompletionChoice>,
-    usage: Option<Usage>
-}
-
-#[derive(Serialize, Debug)]
-struct GPTTurboRequest {
-    model: String,
-    messages: Vec<Message>,
-    temperature: f32
-}
-
-#[derive(Serialize, Debug)]
-struct CompletionRequest {
-    model: String,
-    prompt: String,
-    temperature: f32,
-    max_tokens: usize
-}
-
-#[derive(Deserialize, Debug)]
-struct GoalResponse {
-    reason: Option<String>,
-    goal_status: String,
-    advice: Option<String>,
-}
-
 pub struct Compiler;
 impl Plugin for Compiler {
     fn build(&self, app: &mut App){
@@ -980,10 +785,6 @@ impl Plugin for Compiler {
 }
 fn pre_compile( mut game_state: ResMut<VisualNovelState>){
     info!("Starting pre-compilation");
-
-    /* PRECOMPILATION */
-    let command_structure = Regex::new(r"(\w+)[\s$]").unwrap();
-    let argument_structure = Regex::new(r"(\w+)=`([^`]*)`").unwrap();
     // Compile Script into a vector Transitions, then create an iterator over them
     let full_script_string: String = fs::read_to_string(std::env::current_dir()
             .expect("Failed to get current directory!")
@@ -991,104 +792,9 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
             .join("scripts")
             .join("script.txt"))
         .expect("Issue reading file!");
-    let transitions: Vec<Transition> = full_script_string.lines().map(move |line| {
-        println!("[ Compiling ] `{line}`");
+    
 
-        let mut command_options: HashMap<String, String> = HashMap::new();
-
-        // Remove the command identifier seperately
-        let cmd_id = command_structure.captures_iter(line)
-            .next()
-            .unwrap()
-            .iter()
-            .nth(1)
-            .unwrap()
-            .expect("??")
-            .as_str();
-        println!("CMD: `{cmd_id}`");
-
-        
-        // Adds each option from the command to the options hashmap
-        let args = argument_structure.captures_iter(line);
-        for capture in args {
-            let mut argument = capture.iter();
-            println!("Field - {}", argument.next().unwrap().unwrap().as_str());
-            let option: String = argument.next().expect("Missing field!").map_or(String::from(""), |m| m.as_str().to_owned());
-            let value: String  = argument.next().expect("Missing value!").map_or(String::from(""), |m| m.as_str().to_owned());
-            
-            command_options.insert(option, value);
-        }
-
-        // Try to run the command
-        match cmd_id {
-            "log" => {
-                let msg = command_options.get("msg")
-                    .expect("Missing 'msg' option!")
-                    .to_owned();
-                Transition::Log(msg)
-            },
-            "say" => {
-                let character_id = command_options.get("character")
-                    .expect("Missing 'character' option!")
-                    .to_owned();
-                let msg = command_options.get("msg")
-                    .expect("Missing 'msg' option!")
-                    .to_owned();
-                Transition::Say(character_id, msg)
-            },
-            "psay" => {
-                let msg = command_options.get("msg")
-                    .expect("Missing 'msg' option!")
-                    .to_owned();
-                Transition::Say(String::from("[_PLAYERNAME_]"), msg)
-            },
-            "gpt" => {
-                let character_name = command_options.get("character")
-                    .expect("Missing 'character' option!")
-                    .to_owned();
-                let character_goal = command_options.get("goal")
-                    .expect("Missing 'goal' option!")
-                    .to_owned();
-                Transition::GPTSay(character_name, character_goal)
-            },
-            "set" => {
-                let type_of = command_options.get("type")
-                    .expect("Missing 'type' option!")
-                    .as_str();
-                match type_of {
-                    "emotion" => {
-                        let character_name = command_options.get("character")
-                            .expect("Missing 'character' option required for type 'emotion'!")
-                            .to_owned();
-                        let emotion = command_options.get("emotion")
-                            .expect("Missing 'emotion' option required for type 'emotion'!")
-                            .to_owned();
-                        Transition::SetEmotion(character_name, emotion)
-                    },
-                    "background" => {
-                        let background_id = command_options.get("background")
-                            .expect("Missing 'background' option required for type 'background'!")
-                            .to_owned();
-                        Transition::SetBackground( background_id )
-                    }
-                    "GUI" => {
-                        let gui_id = command_options.get("id")
-                            .expect("Missing 'id' option required for type 'GUI'!")
-                            .to_owned();
-                        let sprite_id = command_options.get("sprite")
-                            .expect("Missing 'sprite' option required for type 'GUI'!")
-                            .to_owned();
-                        Transition::SetGUI( gui_id, sprite_id )
-                    }
-                    _ => panic!("Bad type '{type_of}'!")
-                }
-            }
-            "end" => {
-                Transition::End
-            }
-            _ => panic!("Bad command! {cmd_id}")
-        }
-    }).collect();
+    let transitions: Vec<Transition> = compile_to_transitions(full_script_string);
 
     game_state.transitions_iter = transitions.into_iter();
     game_state.blocking = false;
@@ -1106,12 +812,11 @@ fn run_transitions (
     mut game_state: ResMut<VisualNovelState>,
 ) {
     loop {
-        while !game_state.extra_transitions.is_empty() {
+        while let Some(transition) = game_state.extra_transitions.pop(){
             if game_state.blocking {
                 return;
             }
-            let transition = game_state.extra_transitions.pop();
-            transition.unwrap().call(
+            transition.call(
                 &mut character_say_event,
                 &mut emotion_change_event,
                 &mut background_change_event,
@@ -1182,6 +887,7 @@ fn setup(
 ) {
     /* Config */
     game_state.playername = String::from("Bolt");
+    game_state.api_key = env::var("OPENAI_API_KEY").expect("Environment variable OPENAI_API_KEY needs to be set!");
 
     /* Basic Scene Setup */
     commands.spawn(Camera2dBundle::default());
