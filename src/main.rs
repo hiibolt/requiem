@@ -28,6 +28,7 @@ pub struct VisualNovelState {
 
     all_script_transitions: HashMap<String, Vec<Transition>>,
     transitions_iter: IntoIter<Transition>,
+    current_scene_id: String,
     
     extra_transitions: Vec<Transition>,
 
@@ -293,6 +294,32 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
             }
         ));
     });
+
+    // Spawn info text
+    commands.spawn((
+        GUIScrollText {
+            id: String::from("info_text"),
+            message: String::from("WILL ALWAYS BE BLANK, YOU SHOULD CREATE DIFF TYPE")
+        },
+        Text2dBundle {
+            text: Text {
+                sections: vec![TextSection::new(
+                    "",
+                    TextStyle {
+                        font: asset_server.load("fonts/BOLD.ttf"),
+                        font_size: 50.,
+                        color: Color::RED,
+                    })],
+                alignment: TextAlignment::Center,
+                linebreak_behaviour: BreakLineOn::WordBoundary
+            },
+            text_anchor: Anchor::TopCenter,
+            text_2d_bounds: Text2dBounds{ size: Vec2 { x: 700., y: 20000.} },
+            transform: Transform::from_xyz(0., 302., 3.),
+            visibility: Visibility::Visible,
+            ..default()
+        }
+    ));
 }
 fn update_chatbox(
     mut event_message: EventReader<CharacterSayEvent>,
@@ -323,14 +350,32 @@ fn update_chatbox(
         None
     };
     /* QUICK USE VARIABLES */
-    // Reference to SPECIFICALLY the typing text display object
+    // Reference to SPECIFICALLY the typing text display object.
+    // I'm well aware this is bad practice, but Bevy makes it really hard 
+    // to avoid this without UNREAL levels of indent.
+    // I'm a JS dev who follows Torvald's rules about indentation, cry.
     let mut name_text_option: Option<&mut Text> = None;
-    for (name_text_, scroll_text_obj) in text_object_query.iter_mut() {
-        if scroll_text_obj.id == "type_text" {
-            name_text_option = Some(name_text_.into_inner());
+    let mut type_text_option: Option<&mut Text> = None;
+    let mut info_text_option: Option<&mut Text> = None;
+    let mut message_text_option: Option<&mut Text> = None;
+    let mut message_scroll_text_obj_option: Option<&mut GUIScrollText> = None;
+    for (text_object, scroll_text_obj) in text_object_query.iter_mut() {
+        match scroll_text_obj.id.as_str() {
+            "name_text" => name_text_option = Some(text_object.into_inner()),
+            "info_text" => info_text_option = Some(text_object.into_inner()),
+            "type_text" => type_text_option = Some(text_object.into_inner()),
+            "message_text" => {
+                message_text_option = Some(text_object.into_inner());
+                message_scroll_text_obj_option = Some(scroll_text_obj.into_inner());
+            },
+            _ => {}
         }
     }
-    let name_text = name_text_option.expect("MISSING GUI OBJECT WITH ID 'type_text'!");
+    let name_text = name_text_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'name_text'!");
+    let type_text = type_text_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'type_text'!");
+    let info_text = info_text_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'info_text'!");
+    let message_text = message_text_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'message_text'!");
+    let message_scroll_text_obj = message_scroll_text_obj_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'message_text'!");
 
     // Reference to SPECIFICALLY the typing text display object
     let mut typebox_visibility_option: Option<&mut Visibility> = None;
@@ -355,20 +400,70 @@ fn update_chatbox(
         /* GPT GENERATE - GENERATE MESSAGES FOR PLAYER INTERACTION */
         // Builds a full chat transition with the intent of completing a set goal
         // (contained in the event)
-        let mut ret = generate_chat_transitions(&character, &game_state, &ev);
-        game_state.extra_transitions.append(&mut ret);
-        
-        /* GPT CHECK - CHECK IF THE CHARACTER ACHIEVED THEIR GOAL! */
-        // Any errors here should literally result in continuation of the game.
-        // It's way easier to let the next prompt be generated, 
-        // and let the player see the dialog that was just generated anyway
-        // (plus, it could be OpenAI rate limits)
-        if let Some(goal_status) = determine_goal_status(&character, &game_state, &ev){
-            println!("[ Goal Status: {} ]", goal_status);
-            if !goal_status {
-                game_state.extra_transitions.insert(0,Transition::GPTGet(ev.name.clone(), ev.goal.clone())); // *! passes the past goal
-            }
-        };
+        let ret = generate_chat_transitions(&character, &game_state, &ev);
+        match ret {
+            Ok(mut transitions) => {
+                println!("[ Inserting {} transitions... ]", transitions.len());
+                game_state.extra_transitions.append(&mut transitions);
+                
+                /* GPT CHECK - CHECK IF THE CHARACTER ACHIEVED THEIR GOAL! */
+                // Any errors here should literally result in continuation of the game.
+                // It's way easier to let the next prompt be generated, 
+                // and let the player see the dialog that was just generated anyway
+                // (plus, it could be OpenAI rate limits)
+                if let Some(goal_status) = determine_goal_status(&character, &game_state, &ev){
+                    println!("[ Goal Status: {} ]", goal_status);
+                    if !goal_status {
+                        println!("[ Inserting GPTGet transition... ]");
+                        game_state.extra_transitions.insert(0,Transition::GPTGet(ev.name.clone(), ev.goal.clone())); // *! passes the past goal
+                        println!("[ Current extra transitions: {:?} ]", game_state.extra_transitions);
+                    }
+                };
+            },
+            Err(e) => {
+                info!("[ Error: {:?} ]", e);
+
+                let mut error_message = String::new();
+                match e {
+                    GPTError::RequestBuilderError => {
+                        // Major issue, probably means the player corrupted something.
+                        // This only occurs if the previous messages and goals can't be
+                        // parsed, which is a big deal, because it's barely possible without
+                        // some kinda cheat engine. Resave error.
+                        error_message.push_str("Error parsing previous messages.\nFalling back to last save point...");
+                    },
+                    GPTError::LengthError => {
+                        // The resulting body from OpenAI was too long. Don't know how
+                        // this could ever even happen, but just in case, it'd be a resave 
+                        // error.     
+                        error_message.push_str("Response from OpenAI too long.\nContact the dev, he doesn't actually think this error is possible.\nFalling back to last save point...");               
+                    },
+                    GPTError::IOError => {
+                        // Likely means that the player lost or does not have internet
+                        // connection. Alert the player to try again, and resave error.
+                        error_message.push_str("Unable to send request to OpenAI after 5 attempts!\nPlease check your internet connection and firewall settings.\nFalling back to last save point...");
+                    },
+                    GPTError::OpenAIError => {
+                        // This means the request faced a failure status code from OpenAI,
+                        // meaning OpenAI is down or your api key is restricted / incorrect,
+                        // meaning the engine should alert the player and resave error.
+                        error_message.push_str("Received bad error code from OpenAI.\nVerify that your API key is correct and that you're not blacklisted or rate limited.\nFalling back to last save point...");
+                    },
+                    GPTError::UnparseableOpenAIResponse => {
+                        // I literally have no idea how this could happen. If it does, that's
+                        // probably indicitive of OpenAI changing the way their response JSON
+                        // is formatted. Resave error.
+                        error_message.push_str("Error parsing OpenAI response.\nContact the dev, he doesn't actually think this error is possible.\nFalling back to last save point...");
+                    },
+                    _ => panic!("Undefined behaviour")
+                }
+
+                let current_scene_id = game_state.current_scene_id.clone();
+                info_text.sections[0].value = error_message.clone();
+
+                game_state.extra_transitions.insert(0,Transition::Scene(current_scene_id));
+            },
+        }
 
         game_state.blocking = false;
     }
@@ -381,7 +476,7 @@ fn update_chatbox(
         *typebox_visibility = Visibility::Visible;
 
         // Reset the typebox
-        name_text.sections[0].value = String::from("");
+        type_text.sections[0].value = String::from("");
 
         game_state.extra_transitions.insert(0,Transition::GPTSay(ev.past_character.clone(), ev.past_goal.clone())); // *! passes the past goal
     }
@@ -391,7 +486,7 @@ fn update_chatbox(
     for event in events.iter() {
         match event.char.escape_default().collect::<String>().as_str() {
             "\\u{8}" => { // If BACKSPACE, remove a character
-                name_text.sections[0].value.pop();
+                type_text.sections[0].value.pop();
             },
             "\\r" => { // If ENTER, finish the prompt
                 println!("[ Player finished typing: {} ]", name_text.sections[0].value);
@@ -403,14 +498,14 @@ fn update_chatbox(
                 let name = game_state.playername.clone();
                 game_state.past_messages.push( Message {
                     role: String::from("user"),
-                    content: format!("{}: {}", name, name_text.sections[0].value.clone()),
+                    content: format!("{}: {}", name, type_text.sections[0].value.clone()),
                 });
 
                 // Allow transitions to be run again
                 game_state.blocking = false;
             }
-            _ => if name_text.sections[0].value.len() < 310 {
-                name_text.sections[0].value.push(event.char)
+            _ => if type_text.sections[0].value.len() < 310 {
+                type_text.sections[0].value.push(event.char)
             },
         }
     }
@@ -427,36 +522,31 @@ fn update_chatbox(
         }
 
         // Update both the name and message text objects
-        for (mut name_text, mut scroll_text_obj) in text_object_query.iter_mut() {
-            // Reset the scrolling timer
-            scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(0.));
+        // Reset the scrolling timer
+        scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(0.));
 
-            // Update the name
-            if scroll_text_obj.id == "name_text" {
-                let name = if ev.name == "[_PLAYERNAME_]" { game_state.playername.clone() } else { ev.name.clone() };
-                name_text.sections[0].value = name;
-            }
+        // Update the name
+        let name = if ev.name == "[_PLAYERNAME_]" { game_state.playername.clone() } else { ev.name.clone() };
+        name_text.sections[0].value = name;
 
-            // Update the message text and log it as a Message
-            if scroll_text_obj.id == "message_text" {
-                let role = if ev.name == "[_PLAYERNAME_]" { String::from("user") } else { String::from("assistant") };
-                let mut name = format!("[{}]", game_state.playername.clone());
-                let mut emotion = String::from("");
-                for character in character_query.iter() {
-                    if character.name == ev.name {
-                        name = format!("[{}]", character.name);
-                        emotion = format!("[{}]", character.emotion);
-                    }
-                }
-
-                game_state.past_messages.push( Message {
-                    role,
-                    content: format!("{}{}: {}", name, emotion, ev.message.clone()),
-                });
-
-                scroll_text_obj.message = ev.message.clone();
+        // Update the message text and log it as a Message
+        let role = if ev.name == "[_PLAYERNAME_]" { String::from("user") } else { String::from("assistant") };
+        let mut name = format!("[{}]", game_state.playername.clone());
+        let mut emotion = String::from("");
+        for character in character_query.iter() {
+            if character.name == ev.name {
+                name = format!("[{}]", character.name);
+                emotion = format!("[{}]", character.emotion);
             }
         }
+
+        game_state.past_messages.push( Message {
+            role,
+            content: format!("{}{}: {}", name, emotion, ev.message.clone()),
+        });
+
+        message_scroll_text_obj.message = ev.message.clone();
+        
     }
 
     // (there needs to be a way to clean this up)
@@ -466,49 +556,47 @@ fn update_chatbox(
             return;
         }
     }
-    // you need to find a way to remove the number of indent levels bro
-    for (mut name_text, scroll_text_obj) in text_object_query.iter_mut() {
-        if scroll_text_obj.id == "message_text" {
-            // Take the original string from the message object
-            let mut original_string: String = scroll_text_obj.message.clone();
+    
+    // Take the original string from the message object
+    let mut original_string: String = message_scroll_text_obj.message.clone();
 
-            // Get the section of the string according to the ellapsed time
-            let length: u32 = (scroll_stopwatch.0.elapsed_secs() * 50.) as u32;
+    // Get the section of the string according to the ellapsed time
+    let length: u32 = (scroll_stopwatch.0.elapsed_secs() * 50.) as u32;
 
-            // Return the section and apply it to the text object
-            original_string.truncate(length as usize);
-            name_text.sections[0].value = original_string;
+    // Return the section and apply it to the text object
+    original_string.truncate(length as usize);
+    message_text.sections[0].value = original_string;
 
-            if let Some(position) = window.single().cursor_position() {
-                let resolution = &window.single().resolution;
-                let textbox_bounds: [f32; 4] = [
-                    ( resolution.width() / 2. ) - ( 796. / 2. ),
-                    ( resolution.width() / 2. ) + ( 796. / 2. ),
-                    ( resolution.height() / 2. ) - ( 155. / 2. ) - ( 275. ),
-                    ( resolution.height() / 2. ) + ( 155. / 2. ) - ( 275. ),
-                ];
-                if ( position.x > textbox_bounds[0] && position.x < textbox_bounds[1] ) && ( position.y > textbox_bounds[2] && position.y < textbox_bounds[3] ) && buttons.just_pressed(MouseButton::Left) {
-                    if length < scroll_text_obj.message.len() as u32 {
-                        // Skip message scrolling (bad code, should not be real)
-                        scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(100000000.));
-                        return;
-                    }
-                    println!("[ Player finished message ]");
+    if let Some(position) = window.single().cursor_position() {
+        let resolution = &window.single().resolution;
+        let textbox_bounds: [f32; 4] = [
+            ( resolution.width() / 2. ) - ( 796. / 2. ),
+            ( resolution.width() / 2. ) + ( 796. / 2. ),
+            ( resolution.height() / 2. ) - ( 155. / 2. ) - ( 275. ),
+            ( resolution.height() / 2. ) + ( 155. / 2. ) - ( 275. ),
+        ];
+        if ( position.x > textbox_bounds[0] && position.x < textbox_bounds[1] ) && ( position.y > textbox_bounds[2] && position.y < textbox_bounds[3] ) && buttons.just_pressed(MouseButton::Left) {
+            if length < message_scroll_text_obj.message.len() as u32 {
+                // Skip message scrolling (bad code, should not be real)
+                scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(100000000.));
+                return;
+            }
+            println!("[ Player finished message ]");
+            info_text.sections[0].value = String::from("");
 
-                    // Hide textbox parent object
-                    for (mut visibility, text_box_object) in text_visibility_query.iter_mut() {
-                        if text_box_object.id == "textbox_background" {
-                            *visibility = Visibility::Hidden;
-                        }
-                    }
-
-                    // Allow transitions to be run again
-                    game_state.blocking = false;
+            // Hide textbox parent object
+            for (mut visibility, text_box_object) in text_visibility_query.iter_mut() {
+                if text_box_object.id == "textbox_background" {
+                    *visibility = Visibility::Hidden;
                 }
             }
-            
+
+            // Allow transitions to be run again
+            game_state.blocking = false;
         }
     }
+            
+        
 
 }
 fn update_gui(
@@ -705,7 +793,7 @@ mod ettethread_compiler;
 use crate::ettethread_compiler::*;
 
 /* Custom Types */
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Transition {
     Say(String, String),
     SetEmotion(String, String),
@@ -774,11 +862,13 @@ impl Transition {
             },
             Transition::Log(msg) => println!("{msg}"),
             Transition::Scene(id) => {
+                info!("Calling Transition::Scene");
                 let script_transitions = game_state.all_script_transitions
                     .get(id.as_str())
                     .expect(&format!("Missing {id} script file! Please remember the game requires an entry.txt script file to have a starting position."))
                     .clone();
                 game_state.transitions_iter = script_transitions.into_iter();
+                game_state.current_scene_id = id.clone();
             },
             Transition::End => {
                 todo!();
@@ -829,8 +919,9 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
         .expect("Missing 'entry' script file! Please remember the game requires an entry.txt script file to have a starting position.")
         .clone();
     game_state.transitions_iter = entry.into_iter();
-
     game_state.all_script_transitions = all_script_transitions;
+    game_state.current_scene_id = String::from("entry");
+
     game_state.blocking = false;
 
     info!("Completed pre-compilation");
@@ -846,19 +937,21 @@ fn run_transitions (
     mut game_state: ResMut<VisualNovelState>,
 ) {
     loop {
-        while let Some(transition) = game_state.extra_transitions.pop(){
+        while game_state.extra_transitions.len() > 0 {
             if game_state.blocking {
                 return;
             }
-            transition.call(
-                &mut character_say_event,
-                &mut emotion_change_event,
-                &mut background_change_event,
-                &mut gui_change_event,
-                &mut gpt_say_event,
-                &mut gpt_get_event,
-
-                &mut game_state,);
+            if let Some(transition) = game_state.extra_transitions.pop() {
+                transition.call(
+                    &mut character_say_event,
+                    &mut emotion_change_event,
+                    &mut background_change_event,
+                    &mut gui_change_event,
+                    &mut gpt_say_event,
+                    &mut gpt_get_event,
+    
+                    &mut game_state,);
+            }
         }
         if game_state.blocking {
             return;

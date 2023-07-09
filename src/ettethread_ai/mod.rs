@@ -161,25 +161,24 @@ pub fn query_gpt_turbo(request_string: &String, api_key: &String) -> Result<Stri
     }
     result
 }
-pub fn generate_chat_transitions(character: &Character, game_state: &VisualNovelState, event: &GPTSayEvent) -> Vec<Transition> {
+pub fn generate_chat_transitions(character: &Character, game_state: &VisualNovelState, event: &GPTSayEvent) -> Result<Vec<Transition>, GPTError> {
     let mut ret = Vec::<Transition>::new();
 
     // Serialize the request
-    let serialized_request: String = message_context_to_stringified_request(character, game_state, event).expect("TODO!");
+    let serialized_request: String = message_context_to_stringified_request(character, game_state, event)?;
 
     // Make the request
     println!("[ Sending GPT request to OpenAI ]");
-    let response_object: ChatResponse = query_gpt_turbo(&serialized_request, &game_state.api_key)
+    let response_result_object: ChatResponse = query_gpt_turbo(&serialized_request, &game_state.api_key)
         .and_then(|response| {
             serde_json::from_str(&response).or(Err(GPTError::UnparseableOpenAIResponse))
-        })
-        .unwrap();
+        })?;
 
     // Parse the response
-    let response_message = response_object.choices[0].message.content.clone();
+    let response_message = response_result_object.choices[0].message.content.clone();
 
     println!("[ Response: {} ]", response_message);
-    if let Some(usage) = response_object.usage {
+    if let Some(usage) = response_result_object.usage {
         println!("[ Usage: {} ]", usage.total_tokens.clone());
     }
     // Matches [...][...]: ...
@@ -245,7 +244,7 @@ pub fn generate_chat_transitions(character: &Character, game_state: &VisualNovel
             ret.push(Transition::Say(String::from(event.name.clone()),String::from(message)));
         }
     }
-    ret
+    Ok(ret)
 }
 pub fn determine_goal_status(character: &Character, game_state: &VisualNovelState, event: &GPTSayEvent) -> Option<bool> {
     // Build the prompt for the request
