@@ -26,6 +26,7 @@ pub struct VisualNovelState {
 
     gui_sprites: HashMap<String, Handle<Image>>,
 
+    all_script_transitions: HashMap<String, Vec<Transition>>,
     transitions_iter: IntoIter<Transition>,
     
     extra_transitions: Vec<Transition>,
@@ -704,6 +705,7 @@ mod ettethread_compiler;
 use crate::ettethread_compiler::*;
 
 /* Custom Types */
+#[derive(Clone)]
 pub enum Transition {
     Say(String, String),
     SetEmotion(String, String),
@@ -712,6 +714,7 @@ pub enum Transition {
     GPTGet(String, String),
     GPTSay(String, String),
     Log(String),
+    Scene(String),
     End
 }
 impl Transition {
@@ -770,6 +773,13 @@ impl Transition {
                 gpt_get_event.send(GPTGetEvent {past_character: past_character.clone(), past_goal: past_goal.clone()});
             },
             Transition::Log(msg) => println!("{msg}"),
+            Transition::Scene(id) => {
+                let script_transitions = game_state.all_script_transitions
+                    .get(id.as_str())
+                    .expect(&format!("Missing {id} script file! Please remember the game requires an entry.txt script file to have a starting position."))
+                    .clone();
+                game_state.transitions_iter = script_transitions.into_iter();
+            },
             Transition::End => {
                 todo!();
             }
@@ -785,18 +795,42 @@ impl Plugin for Compiler {
 }
 fn pre_compile( mut game_state: ResMut<VisualNovelState>){
     info!("Starting pre-compilation");
-    // Compile Script into a vector Transitions, then create an iterator over them
-    let full_script_string: String = fs::read_to_string(std::env::current_dir()
-            .expect("Failed to get current directory!")
-            .join("assets")
-            .join("scripts")
-            .join("script.txt"))
-        .expect("Issue reading file!");
-    
+    /* Character Setup */
+    // Asset Gathering
+    let mut all_script_transitions = HashMap::<String, Vec<Transition>>::new();
+    let scripts_dir = std::env::current_dir()
+        .expect("Failed to get current directory!")
+        .join("assets")
+        .join("scripts");
+    let scripts_dir_entries: Vec<std::fs::DirEntry> = fs::read_dir(scripts_dir)
+        .expect("Unable to read scripts folder!")
+        .filter_map(|entry_result| {
+            entry_result.ok()
+        })
+        .collect();
+    for script_file_entry in scripts_dir_entries {
+        let script_name: String = script_file_entry
+            .path()
+            .as_path()
+            .file_stem().expect("Your script file must have a name! `.txt` is illegal.")
+            .to_str().expect("Malformed UTF-8 in script file name, please verify it meets UTF-8 validity!")
+            .to_owned();
+        let script_contents: String = fs::read_to_string(script_file_entry.path())
+            .expect("Contents of the script file must be valid UTF-8!");
+        let script_transitions: Vec<Transition> = compile_to_transitions(script_contents);
 
-    let transitions: Vec<Transition> = compile_to_transitions(full_script_string);
+        println!("[ [ Imported script '{}'! ] ]", script_name);
+        all_script_transitions.insert(script_name, script_transitions);
+    }
 
-    game_state.transitions_iter = transitions.into_iter();
+    // Setup entrypoint
+    let entry = all_script_transitions
+        .get("entry")
+        .expect("Missing 'entry' script file! Please remember the game requires an entry.txt script file to have a starting position.")
+        .clone();
+    game_state.transitions_iter = entry.into_iter();
+
+    game_state.all_script_transitions = all_script_transitions;
     game_state.blocking = false;
 
     info!("Completed pre-compilation");

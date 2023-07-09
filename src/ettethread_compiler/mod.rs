@@ -101,6 +101,12 @@ pub fn compile_to_transitions(full_script_string: String) -> Vec<Transition> {
                         _ => panic!("Bad type '{type_of}'!")
                     }
                 }
+                "scene" => {
+                    let scene_id = command_options.get("id")
+                        .expect("Missing 'id' option required for type 'scene'!")
+                        .to_owned();
+                    Transition::Scene(scene_id)
+                }
                 "end" => {
                     Transition::End
                 }
