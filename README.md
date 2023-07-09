@@ -24,7 +24,7 @@ Rust / NodeJS prototype
 - [x] (not yet ported to Rust version) Advanced logic syntax and macros
 - [x] Custom langauge
 - [x] Easy to learn bash-like syntax
-- [x] (not yet ported to Rust version) Scenes
+- [x] Scenes
 - [x] Easy pathing
 - [x] Artificially generatable dialog
 - [x] AI 'goal' system
