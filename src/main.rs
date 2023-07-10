@@ -16,7 +16,11 @@ use regex::Regex;
 use json::parse;
 use serde::{ Serialize, Deserialize };
 
-
+#[derive(Component)]
+struct Object {
+    r#type: String,
+    id: String
+}
 
 #[derive(Resource, Default)]
 pub struct VisualNovelState {
@@ -88,6 +92,10 @@ fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
 
     /* Background Setup */
     commands.spawn((
+        Object {
+            r#type: String::from("background"),
+            id: String::from("_primary")
+        },
         Background {
             background_sprites,
         }, 
@@ -124,12 +132,7 @@ fn update_background(
 */
 /* Components */
 #[derive(Component)]
-struct GUISprite {
-    id: String,
-}
-#[derive(Component)]
 struct GUIScrollText {
-    id: String,
     message: String
 }
 #[derive(Component)]
@@ -186,8 +189,9 @@ fn import_gui_sprites( mut game_state: ResMut<VisualNovelState>, asset_server: R
 fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
     // Spawn Backplate + Nameplate
     commands.spawn((
-        GUISprite {
-            id: String::from("textbox_background")
+        Object {
+            r#type: String::from("gui"),
+            id: String::from("_textbox_background")
         },
         SpriteBundle {
             visibility: Visibility::Hidden,
@@ -197,8 +201,9 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
     ))
     .with_children(|parent| {
         parent.spawn((
-            GUISprite {
-                id: String::from("namebox_background")
+            Object {
+                r#type: String::from("gui"),
+                id: String::from("_namebox_background")
             },
             SpriteBundle {
                 visibility: Visibility::Inherited,
@@ -208,8 +213,11 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
             }
         ));
         parent.spawn((
+            Object {
+                r#type: String::from("gui"),
+                id: String::from("_name_text")
+            },
             GUIScrollText {
-                id: String::from("name_text"),
                 message: String::from("UNFILLED")
             },
             Text2dBundle {
@@ -231,8 +239,11 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
             }
         ));
         parent.spawn((
+            Object {
+                r#type: String::from("gui"),
+                id: String::from("_message_text")
+            },
             GUIScrollText {
-                id: String::from("message_text"),
                 message: String::from("UNFILLED")
             },
             Text2dBundle {
@@ -258,8 +269,9 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
 
     // Spawn typebox
     commands.spawn((
-        GUISprite {
-            id: String::from("typebox_background")
+        Object {
+            r#type: String::from("gui"),
+            id: String::from("_typebox_background")
         },
         SpriteBundle {
             visibility: Visibility::Hidden,
@@ -270,8 +282,11 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
     ))
     .with_children(|parent| {
         parent.spawn((
+            Object {
+                r#type: String::from("gui"),
+                id: String::from("_type_text")
+            },
             GUIScrollText {
-                id: String::from("type_text"),
                 message: String::from("UNFILLED")
             },
             Text2dBundle {
@@ -297,8 +312,11 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
 
     // Spawn info text
     commands.spawn((
+        Object {
+            r#type: String::from("gui"),
+            id: String::from("_info_text")
+        },
         GUIScrollText {
-            id: String::from("info_text"),
             message: String::from("WILL ALWAYS BE BLANK, YOU SHOULD CREATE DIFF TYPE")
         },
         Text2dBundle {
@@ -326,9 +344,8 @@ fn update_chatbox(
     mut gpt_message: EventReader<GPTSayEvent>,
     mut get_message: EventReader<GPTGetEvent>,
     character_query: Query<&Character>,
-    mut text_visibility_query: Query<(&mut Visibility, &GUISprite), Without<TypeBox>>,
-    mut typing_visibility_query: Query<(&mut Visibility, &GUISprite), With<TypeBox>>,
-    mut text_object_query: Query<(&mut Text, &mut GUIScrollText), Without<TypeBox>>,
+    mut visibility_query: Query<(&mut Visibility, &Object)>,
+    mut text_object_query: Query<(&mut Text, &mut GUIScrollText, &Object), Without<TypeBox>>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 
     mut events: EventReader<ReceivedCharacter>,
@@ -359,13 +376,13 @@ fn update_chatbox(
     let mut info_text_option: Option<&mut Text> = None;
     let mut message_text_option: Option<&mut Text> = None;
     let mut message_scroll_text_obj_option: Option<&mut GUIScrollText> = None;
-    for (text_object, scroll_text_obj) in text_object_query.iter_mut() {
-        match scroll_text_obj.id.as_str() {
-            "name_text" => name_text_option = Some(text_object.into_inner()),
-            "info_text" => info_text_option = Some(text_object.into_inner()),
-            "type_text" => type_text_option = Some(text_object.into_inner()),
-            "message_text" => {
-                message_text_option = Some(text_object.into_inner());
+    for (text_literal, scroll_text_obj, text_obj) in text_object_query.iter_mut() {
+        match text_obj.id.as_str() {
+            "_name_text" => name_text_option = Some(text_literal.into_inner()),
+            "_info_text" => info_text_option = Some(text_literal.into_inner()),
+            "_type_text" => type_text_option = Some(text_literal.into_inner()),
+            "_message_text" => {
+                message_text_option = Some(text_literal.into_inner());
                 message_scroll_text_obj_option = Some(scroll_text_obj.into_inner());
             },
             _ => {}
@@ -379,13 +396,16 @@ fn update_chatbox(
 
     // Reference to SPECIFICALLY the typing text display object
     let mut typebox_visibility_option: Option<&mut Visibility> = None;
-    for (visibility, text_box_object) in typing_visibility_query.iter_mut() {
-        if text_box_object.id == "typebox_background" {
-            typebox_visibility_option = Some(visibility.into_inner());
+    let mut textbox_visibility_option: Option<&mut Visibility> = None;
+    for (visibility_literal, typebox_obj) in visibility_query.iter_mut() {
+        match typebox_obj.id.as_str() {
+            "_typebox_background" => typebox_visibility_option = Some(visibility_literal.into_inner()),
+            "_textbox_background" => textbox_visibility_option = Some(visibility_literal.into_inner()),
+            _ => {}
         }
     }
-    let typebox_visibility = typebox_visibility_option.expect("MISSING GUI OBJECT WITH ID 'typebox_background'!");
-
+    let typebox_visibility = typebox_visibility_option.expect("MISSING GUI OBJECT WITH ID '_typebox_background'!");
+    let textbox_visibility = textbox_visibility_option.expect("MISSING GUI OBJECT WITH ID '_textbox_background'!");
     
     // Tick clock (must be after everything)
     // basically if there's enough of a jump, it's not worth the stutters, preserve gameplay over ego :<
@@ -515,11 +535,7 @@ fn update_chatbox(
         game_state.blocking = true;
 
         // Make the parent textbox visible
-        for (mut visibility, text_box_object) in text_visibility_query.iter_mut() {
-            if text_box_object.id == "textbox_background" {
-                *visibility = Visibility::Visible;
-            }
-        }
+        *textbox_visibility = Visibility::Visible;
 
         // Update both the name and message text objects
         // Reset the scrolling timer
@@ -551,10 +567,8 @@ fn update_chatbox(
 
     // (there needs to be a way to clean this up)
     // If the textbox is hidden, ignore the next section dedicated to updating it
-    for (visibility, text_box_object) in text_visibility_query.iter() {
-        if text_box_object.id == "textbox_background" && visibility == Visibility::Hidden {
-            return;
-        }
+    if *textbox_visibility == Visibility::Hidden {
+        return;
     }
     
     // Take the original string from the message object
@@ -585,11 +599,7 @@ fn update_chatbox(
             info_text.sections[0].value = String::from("");
 
             // Hide textbox parent object
-            for (mut visibility, text_box_object) in text_visibility_query.iter_mut() {
-                if text_box_object.id == "textbox_background" {
-                    *visibility = Visibility::Hidden;
-                }
-            }
+            *textbox_visibility = Visibility::Hidden;
 
             // Allow transitions to be run again
             game_state.blocking = false;
@@ -601,7 +611,7 @@ fn update_chatbox(
 }
 fn update_gui(
     mut event_change: EventReader<GUIChangeEvent>,
-    mut gui_query: Query<(&GUISprite, &mut Handle<Image>)>,
+    mut gui_query: Query<(&Object, &mut Handle<Image>)>,
 
     game_state: Res<VisualNovelState>
 ) {
@@ -724,6 +734,10 @@ fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
     let emotion = parsed_character["default_emotion"].as_str().expect("Missing 'name' attribute").to_owned();
 
     commands.spawn((
+        Object {
+            r#type: String::from("character"),
+            id: format!("_character_{name}")
+        },
         Character {
             name,
             outfit: outfit.clone(),
