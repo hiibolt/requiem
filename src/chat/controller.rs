@@ -1,4 +1,4 @@
-use crate::{ettethread_ai::*, Character, Object, Transition, VisualNovelState};
+use crate::{intelligence::*, Character, Object, Transition, VisualNovelState};
 
 use std::collections::HashMap;
 

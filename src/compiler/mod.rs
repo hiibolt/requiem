@@ -1,5 +1,9 @@
-use crate::Transition;
-use crate::Regex;
+pub mod controller;
+
+pub use controller::Transition;
+pub use controller::Compiler;
+
+use regex::Regex;
 use std::collections::HashMap;
 
 pub fn compile_to_transitions(full_script_string: String) -> Vec<Transition> {

@@ -1,9 +1,10 @@
-use crate::{ Serialize, Deserialize };
 use crate::info;
 use crate::Character;
 use crate::VisualNovelState;
 use crate::Transition;
+
 use regex::Regex;
+use serde::{ Serialize, Deserialize };
 
 
 
