@@ -99,7 +99,7 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                             font_size: 40.0,
                             color: Color::WHITE,
                         })],
-                    alignment: TextAlignment::Left,
+                    justify: JustifyText::Left,
                     linebreak_behavior: BreakLineOn::WordBoundary
                 },
                 text_anchor: Anchor::TopLeft,
@@ -125,7 +125,7 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                             font_size: 27.0,
                             color: Color::WHITE,
                         })],
-                    alignment: TextAlignment::Left,
+                    justify: JustifyText::Left,
                     linebreak_behavior: BreakLineOn::WordBoundary
                 },
                 text_anchor: Anchor::TopLeft,
@@ -168,7 +168,7 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                             font_size: 27.0,
                             color: Color::WHITE,
                         })],
-                    alignment: TextAlignment::Left,
+                    justify: JustifyText::Left,
                     linebreak_behavior: BreakLineOn::WordBoundary
                 },
                 text_anchor: Anchor::TopLeft,
@@ -198,7 +198,7 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                         font_size: 50.,
                         color: Color::RED,
                     })],
-                alignment: TextAlignment::Center,
+                justify: JustifyText::Center,
                 linebreak_behavior: BreakLineOn::WordBoundary,
             },
             text_anchor: Anchor::TopCenter,
@@ -224,7 +224,7 @@ fn update_chatbox(
 
     time: Res<Time>,
     window: Query<&Window, With<PrimaryWindow>>,
-    buttons: Res<Input<MouseButton>>,
+    buttons: Res<ButtonInput<MouseButton>>,
 ) {
     /* QUICK FUNCTIONS */
     // Returns a reference to a character object by its name
@@ -395,7 +395,7 @@ fn update_chatbox(
                 game_state.blocking = false;
             }
             _ => if type_text.sections[0].value.len() < 310 {
-                type_text.sections[0].value.push(event.char)
+                type_text.sections[0].value.push(event.char.chars().next().expect("Empty string"))
             },
         }
     }

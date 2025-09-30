@@ -36,7 +36,7 @@ pub struct VisualNovelState {
     all_script_transitions: HashMap<String, Vec<Transition>>,
     transitions_iter: IntoIter<Transition>,
     current_scene_id: String,
-    
+
     extra_transitions: Vec<Transition>,
 
     past_messages: Vec<Message>,
@@ -52,15 +52,13 @@ fn main() {
                     title: String::from("Ettethread - Requiem"),
                     resolution: (1280., 800.).into(),
                     present_mode: PresentMode::AutoVsync,
-                    // Tells wasm to resize the window according to the available canvas
-                    fit_canvas_to_parent: true,
                     // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
                     prevent_default_event_handling: false,
                     ..default()
                 }),
                 ..default()
                 })
-        ) 
+        )
         .init_resource::<VisualNovelState>()
         .add_systems(Startup, setup)
         .add_plugins((
