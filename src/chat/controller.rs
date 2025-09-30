@@ -2,7 +2,7 @@ use crate::{intelligence::*, Character, Object, Transition, VisualNovelState};
 
 use std::collections::HashMap;
 
-use bevy::{prelude::*, sprite::Anchor, text::{BreakLineOn, Text2dBounds}, time::Stopwatch, window::PrimaryWindow};
+use bevy::{color::palettes::css::RED, input::keyboard::{KeyboardInput, Key}, prelude::*, sprite::Anchor, text::{BreakLineOn, Text2dBounds}, time::Stopwatch, window::PrimaryWindow};
 
 
 /* Components */
@@ -196,7 +196,7 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                     TextStyle {
                         font: asset_server.load("fonts/BOLD.ttf"),
                         font_size: 50.,
-                        color: Color::RED,
+                        color: Color::Srgba(RED),
                     })],
                 justify: JustifyText::Center,
                 linebreak_behavior: BreakLineOn::WordBoundary,
@@ -218,7 +218,7 @@ fn update_chatbox(
     mut text_object_query: Query<(&mut Text, &mut GUIScrollText, &Object), Without<TypeBox>>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 
-    mut events: EventReader<ReceivedCharacter>,
+    mut events: EventReader<KeyboardInput>,
 
     mut game_state: ResMut<VisualNovelState>,
 
@@ -374,11 +374,11 @@ fn update_chatbox(
     /* GPT GET (Input) Event ONGOING [Transition::GPTGet] */
     // For each character input
     for event in events.read() {
-        match event.char.escape_default().collect::<String>().as_str() {
-            "\\u{8}" => { // If BACKSPACE, remove a character
+        match event.key_code {
+            KeyCode::Backspace => { // If BACKSPACE, remove a character
                 type_text.sections[0].value.pop();
             },
-            "\\r" => { // If ENTER, finish the prompt
+            KeyCode::Enter => { // If ENTER, finish the prompt
                 println!("[ Player finished typing: {} ]", name_text.sections[0].value);
 
                 // Hide textbox parent object
@@ -394,9 +394,12 @@ fn update_chatbox(
                 // Allow transitions to be run again
                 game_state.blocking = false;
             }
-            _ => if type_text.sections[0].value.len() < 310 {
-                type_text.sections[0].value.push(event.char.chars().next().expect("Empty string"))
-            },
+            _ => {},
+        }
+        if let Key::Character(char) = &event.logical_key {
+            if type_text.sections[0].value.len() < 310 {
+                type_text.sections[0].value.push(char.chars().next().expect("Empty string"));
+            }
         }
     }
 
