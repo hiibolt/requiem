@@ -81,5 +81,5 @@ fn setup(
 
     // Create our primary camera (which is
     //  necessary even for 2D games)
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2d::default());
 }

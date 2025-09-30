@@ -70,7 +70,7 @@ fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
             .file_name().expect("No directory name!")
             .to_str().expect("Malformed UTF-8 in directory name, please verify it meets UTF-8 validity!")
             .to_owned();
-        
+
         let sprite_paths = std::fs::read_dir(outfit_dir)
             .expect("No character data!")
             .filter_map(|entry| {
@@ -124,28 +124,28 @@ fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
                     .to_owned()
                 ).collect::<Vec<String>>(),
         },
-        SpriteBundle {
-            texture: outfits.get(&outfit)
+        Sprite {
+            image: outfits.get(&outfit)
                 .expect("'{character.outfit}' attribute does not exist!")
                 .get(&emotion)
                 .expect("'default_emotion' atttribute does not exist!")
                 .clone(),
-            transform: Transform::IDENTITY
-                .with_translation(Vec3 { x:0., y:-40., z:1. } )
-                .with_scale(Vec3 { x:0.75, y:0.75, z:1. } ),
             ..default()
         },
+        Transform::default()
+            .with_translation(Vec3 { x:0., y:-40., z:1. } )
+            .with_scale(Vec3 { x:0.75, y:0.75, z:1. } ),
         CharacterSprites { outfits }
     ));
 }
 fn update_characters(
     mut character_query: Query<(
-        &mut Character, 
+        &mut Character,
         &CharacterSprites,
-        &mut Handle<Image>
+        &mut Sprite
     ), (With<Character>, Without<Background>)>,
     mut event_emotion_change: EventReader<EmotionChangeEvent>,
-    
+
     _text_object_query: Query<(&mut Text, &mut GUIScrollText)>,
     _scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 ){
@@ -153,7 +153,7 @@ fn update_characters(
         for (mut character, sprites, mut current_sprite) in character_query.iter_mut() {
             if character.name == ev.name {
                 character.emotion = ev.emotion.to_owned();
-                *current_sprite = sprites.outfits.get(&character.outfit)
+                current_sprite.image = sprites.outfits.get(&character.outfit)
                     .expect("'{character.outfit}' attribute does not exist!")
                     .get(&character.emotion)
                     .expect("'default_emotion' atttribute does not exist!")

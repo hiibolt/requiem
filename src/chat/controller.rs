@@ -2,7 +2,7 @@ use crate::{intelligence::*, Character, Object, Transition, VisualNovelState};
 
 use std::collections::HashMap;
 
-use bevy::{color::palettes::css::RED, input::keyboard::{KeyboardInput, Key}, prelude::*, sprite::Anchor, text::{BreakLineOn, Text2dBounds}, time::Stopwatch, window::PrimaryWindow};
+use bevy::{color::palettes::css::{RED, WHITE}, input::keyboard::{Key, KeyboardInput}, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, window::PrimaryWindow};
 
 
 /* Components */
@@ -63,11 +63,9 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
             r#type: String::from("gui"),
             id: String::from("_textbox_background")
         },
-        SpriteBundle {
-            visibility: Visibility::Hidden,
-            transform: Transform::from_xyz(0., -275., 2.),
-            ..default()
-        }
+        Visibility::Hidden,
+        Sprite::default(),
+        Transform::from_xyz(0., -275., 2.),
     ))
     .with_children(|parent| {
         parent.spawn((
@@ -75,12 +73,9 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                 r#type: String::from("gui"),
                 id: String::from("_namebox_background")
             },
-            SpriteBundle {
-                visibility: Visibility::Inherited,
-                transform: Transform::from_xyz(-270., 105., 2.)
-                    .with_scale( Vec3 { x: 0.75, y: 0.75, z: 2. } ),
-                ..default()
-            }
+            Visibility::Inherited,
+            Sprite::default(),
+            Transform::from_xyz(-270., 105., 2.).with_scale( Vec3 { x: 0.75, y: 0.75, z: 2. } ),
         ));
         parent.spawn((
             Object {
@@ -90,23 +85,20 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
             GUIScrollText {
                 message: String::from("UNFILLED")
             },
-            Text2dBundle {
-                text: Text {
-                    sections: vec![TextSection::new(
-                        "UNFILLED",
-                        TextStyle {
-                            font: asset_server.load("fonts/ALLER.ttf"),
-                            font_size: 40.0,
-                            color: Color::WHITE,
-                        })],
-                    justify: JustifyText::Left,
-                    linebreak_behavior: BreakLineOn::WordBoundary
-                },
-                text_anchor: Anchor::TopLeft,
-                transform: Transform::from_xyz(-305., 126., 3.),
-                visibility: Visibility::Inherited,
+            Text2d("UNFILLED".into()),
+            TextLayout {
+                justify: JustifyText::Left,
+                linebreak: LineBreak::WordBoundary,
+            },
+            Visibility::Inherited,
+            Transform::from_xyz(-305., 126., 3.),
+            Anchor::TopLeft,
+            TextFont {
+                font: asset_server.load("fonts/ALLER.ttf"),
+                font_size: 40.0,
                 ..default()
-            }
+            },
+            TextColor(Color::Srgba(WHITE)),
         ));
         parent.spawn((
             Object {
@@ -116,24 +108,21 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
             GUIScrollText {
                 message: String::from("UNFILLED")
             },
-            Text2dBundle {
-                text: Text {
-                    sections: vec![TextSection::new(
-                        "UNFILLED CHAT MESSAGE",
-                        TextStyle {
-                            font: asset_server.load("fonts/BOLDITALIC.ttf"),
-                            font_size: 27.0,
-                            color: Color::WHITE,
-                        })],
-                    justify: JustifyText::Left,
-                    linebreak_behavior: BreakLineOn::WordBoundary
-                },
-                text_anchor: Anchor::TopLeft,
-                text_2d_bounds: Text2dBounds{ size: Vec2 { x: 700., y: 20000.} },
-                transform: Transform::from_xyz(-350., 62., 3.),
-                visibility: Visibility::Inherited,
+            Text2d("UNFILLED CHAT MESSAGE".into()),
+            TextLayout {
+                justify: JustifyText::Left,
+                linebreak: LineBreak::WordBoundary
+            },
+            TextFont {
+                font: asset_server.load("fonts/BOLDITALIC.ttf"),
+                font_size: 27.0,
                 ..default()
-            }
+            },
+            TextColor(Color::Srgba(WHITE)),
+            Anchor::TopLeft,
+            Transform::from_xyz(-350., 62., 3.),
+            TextBounds{ width: Some(700.), height: Some(20000.) },
+            Visibility::Inherited,
         ));
     });
 
@@ -143,11 +132,9 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
             r#type: String::from("gui"),
             id: String::from("_typebox_background")
         },
-        SpriteBundle {
-            visibility: Visibility::Hidden,
-            transform: Transform::from_xyz(0., -275., 2.),
-            ..default()
-        },
+        Visibility::Hidden,
+        Transform::from_xyz(0., -275., 2.),
+        Sprite::default(),
         TypeBox
     ))
     .with_children(|parent| {
@@ -159,24 +146,21 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
             GUIScrollText {
                 message: String::from("UNFILLED")
             },
-            Text2dBundle {
-                text: Text {
-                    sections: vec![TextSection::new(
-                        "Start typing...",
-                        TextStyle {
-                            font: asset_server.load("fonts/BOLDITALIC.ttf"),
-                            font_size: 27.0,
-                            color: Color::WHITE,
-                        })],
-                    justify: JustifyText::Left,
-                    linebreak_behavior: BreakLineOn::WordBoundary
-                },
-                text_anchor: Anchor::TopLeft,
-                text_2d_bounds: Text2dBounds{ size: Vec2 { x: 700., y: 20000.} },
-                transform: Transform::from_xyz(-350., 62., 3.),
-                visibility: Visibility::Inherited,
+            Text2d("Start typing...".into()),
+            TextFont {
+                font: asset_server.load("fonts/BOLDITALIC.ttf"),
+                font_size: 27.0,
                 ..default()
-            }
+            },
+            TextColor(Color::Srgba(WHITE)),
+            TextLayout {
+                justify: JustifyText::Left,
+                linebreak: LineBreak::WordBoundary,
+            },
+            Anchor::TopLeft,
+            TextBounds { width: Some(700.), height: Some(20000.) },
+            Transform::from_xyz(-350., 62., 3.),
+            Visibility::Inherited,
         ));
     });
 
@@ -189,24 +173,24 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
         GUIScrollText {
             message: String::from("WILL ALWAYS BE BLANK, YOU SHOULD CREATE DIFF TYPE")
         },
-        Text2dBundle {
-            text: Text {
-                sections: vec![TextSection::new(
-                    "",
-                    TextStyle {
-                        font: asset_server.load("fonts/BOLD.ttf"),
-                        font_size: 50.,
-                        color: Color::Srgba(RED),
-                    })],
-                justify: JustifyText::Center,
-                linebreak_behavior: BreakLineOn::WordBoundary,
-            },
-            text_anchor: Anchor::TopCenter,
-            text_2d_bounds: Text2dBounds{ size: Vec2 { x: 700., y: 20000.} },
-            transform: Transform::from_xyz(0., 302., 3.),
-            visibility: Visibility::Visible,
+        Text2d("".into()),
+        TextFont {
+            font: asset_server.load("fonts/BOLD.ttf"),
+            font_size: 50.,
             ..default()
-        }
+        },
+        TextBounds {
+            width: Some(700.),
+            height: Some(20000.),
+        },
+        TextColor(Color::Srgba(RED)),
+        TextLayout {
+            justify: JustifyText::Center,
+            linebreak: LineBreak::WordBoundary,
+        },
+        Anchor::TopCenter,
+        Transform::from_xyz(0., 302., 3.),
+        Visibility::Visible,
     ));
 }
 fn update_chatbox(
@@ -215,7 +199,7 @@ fn update_chatbox(
     mut get_message: EventReader<GPTGetEvent>,
     character_query: Query<&Character>,
     mut visibility_query: Query<(&mut Visibility, &Object)>,
-    mut text_object_query: Query<(&mut Text, &mut GUIScrollText, &Object), Without<TypeBox>>,
+    mut text_object_query: Query<(&mut Text2d, &mut GUIScrollText, &Object), Without<TypeBox>>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 
     mut events: EventReader<KeyboardInput>,
@@ -241,10 +225,10 @@ fn update_chatbox(
     // I'm well aware this is bad practice, but Bevy makes it really hard
     // to avoid this without UNREAL levels of indent.
     // I'm a JS dev who follows Torvald's rules about indentation, cry.
-    let mut name_text_option: Option<&mut Text> = None;
-    let mut type_text_option: Option<&mut Text> = None;
-    let mut info_text_option: Option<&mut Text> = None;
-    let mut message_text_option: Option<&mut Text> = None;
+    let mut name_text_option: Option<&mut Text2d> = None;
+    let mut type_text_option: Option<&mut Text2d> = None;
+    let mut info_text_option: Option<&mut Text2d> = None;
+    let mut message_text_option: Option<&mut Text2d> = None;
     let mut message_scroll_text_obj_option: Option<&mut GUIScrollText> = None;
     for (text_literal, scroll_text_obj, text_obj) in text_object_query.iter_mut() {
         match text_obj.id.as_str() {
@@ -279,7 +263,7 @@ fn update_chatbox(
 
     // Tick clock (must be after everything)
     // basically if there's enough of a jump, it's not worth the stutters, preserve gameplay over ego :<
-    let to_tick = if time.delta_seconds() > 1. { std::time::Duration::from_secs_f32(0.) } else { time.delta() };
+    let to_tick = if time.delta_secs() > 1. { std::time::Duration::from_secs_f32(0.) } else { time.delta() };
     scroll_stopwatch.0.tick(to_tick);
 
     /* GPT EVENTS [Transition::GPTSay] */
@@ -349,7 +333,7 @@ fn update_chatbox(
                 }
 
                 let current_scene_id = game_state.current_scene_id.clone();
-                info_text.sections[0].value = error_message.clone();
+                info_text.0 = error_message.clone();
 
                 game_state.extra_transitions.insert(0,Transition::Scene(current_scene_id));
             },
@@ -366,7 +350,7 @@ fn update_chatbox(
         *typebox_visibility = Visibility::Visible;
 
         // Reset the typebox
-        type_text.sections[0].value = String::from("");
+        type_text.0 = String::from("");
 
         game_state.extra_transitions.insert(0,Transition::GPTSay(ev.past_character.clone(), ev.past_goal.clone())); // *! passes the past goal
     }
@@ -376,10 +360,10 @@ fn update_chatbox(
     for event in events.read() {
         match event.key_code {
             KeyCode::Backspace => { // If BACKSPACE, remove a character
-                type_text.sections[0].value.pop();
+                type_text.0.pop();
             },
             KeyCode::Enter => { // If ENTER, finish the prompt
-                println!("[ Player finished typing: {} ]", name_text.sections[0].value);
+                println!("[ Player finished typing: {} ]", name_text.0);
 
                 // Hide textbox parent object
                 *typebox_visibility = Visibility::Hidden;
@@ -388,7 +372,7 @@ fn update_chatbox(
                 let name = game_state.playername.clone();
                 game_state.past_messages.push( Message {
                     role: String::from("user"),
-                    content: format!("{}: {}", name, type_text.sections[0].value.clone()),
+                    content: format!("{}: {}", name, type_text.0.clone()),
                 });
 
                 // Allow transitions to be run again
@@ -397,8 +381,8 @@ fn update_chatbox(
             _ => {},
         }
         if let Key::Character(char) = &event.logical_key {
-            if type_text.sections[0].value.len() < 310 {
-                type_text.sections[0].value.push(char.chars().next().expect("Empty string"));
+            if type_text.0.len() < 310 {
+                type_text.0.push(char.chars().next().expect("Empty string"));
             }
         }
     }
@@ -416,7 +400,7 @@ fn update_chatbox(
 
         // Update the name
         let name = if ev.name == "[_PLAYERNAME_]" { game_state.playername.clone() } else { ev.name.clone() };
-        name_text.sections[0].value = name;
+        name_text.0 = name;
 
         // Update the message text and log it as a Message
         let role = if ev.name == "[_PLAYERNAME_]" { String::from("user") } else { String::from("assistant") };
@@ -452,7 +436,7 @@ fn update_chatbox(
 
     // Return the section and apply it to the text object
     original_string.truncate(length as usize);
-    message_text.sections[0].value = original_string;
+    message_text.0 = original_string;
 
     if let Some(position) = window.single().cursor_position() {
         let resolution = &window.single().resolution;
@@ -469,7 +453,7 @@ fn update_chatbox(
                 return;
             }
             println!("[ Player finished message ]");
-            info_text.sections[0].value = String::from("");
+            info_text.0 = String::from("");
 
             // Hide textbox parent object
             *textbox_visibility = Visibility::Hidden;
@@ -478,20 +462,17 @@ fn update_chatbox(
             game_state.blocking = false;
         }
     }
-
-
-
 }
 fn update_gui(
     mut event_change: EventReader<GUIChangeEvent>,
-    mut gui_query: Query<(&Object, &mut Handle<Image>)>,
+    mut gui_query: Query<(&Object, &mut Sprite)>,
 
     game_state: Res<VisualNovelState>
 ) {
     for ev in event_change.read() {
         for (gui_obj, mut current_sprite) in gui_query.iter_mut() {
             if gui_obj.id == ev.gui_id {
-                *current_sprite = game_state.gui_sprites.get(&ev.sprite_id)
+                current_sprite.image = game_state.gui_sprites.get(&ev.sprite_id)
                     .expect("GUI asset '{ev.sprite_id}' does not exist!")
                     .clone();
                 println!("[ Set GUI asset '{}' to '{}']", ev.gui_id, ev.sprite_id);

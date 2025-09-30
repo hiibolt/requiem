@@ -27,7 +27,7 @@ impl Plugin for BackgroundController {
 }
 pub fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
     let mut background_sprites: HashMap<String, Handle<Image>>= HashMap::new();
- 
+
     let master_backgrounds_dir = std::env::current_dir()
         .expect("Failed to get current directory!")
         .join("assets")
@@ -54,24 +54,21 @@ pub fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>
         },
         Background {
             background_sprites,
-        }, 
-        SpriteBundle {
-            transform: Transform::IDENTITY,
-            ..default()
-        }
+        },
+        Sprite::default()
     ));
 }
 pub fn update_background(
     mut background_query: Query<(
-        &Background, 
-        &mut Handle<Image>
+        &Background,
+        &mut Sprite
     ), (With<Background>, Without<Character>)>,
 
     mut background_change_event: EventReader<BackgroundChangeEvent>,
 ){
     for ev in background_change_event.read() {
         for (background_obj, mut current_sprite) in background_query.iter_mut() {
-            *current_sprite = background_obj.background_sprites.get(&ev.background_id)
+            current_sprite.image = background_obj.background_sprites.get(&ev.background_id)
                 .expect("'{character.outfit}' attribute does not exist!")
                 .clone();
             println!("[ Set background to '{}']", ev.background_id);
