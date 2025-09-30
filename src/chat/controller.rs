@@ -22,14 +22,12 @@ pub struct ChatController;
 impl Plugin for ChatController {
     fn build(&self, app: &mut App){
         app.insert_resource(ChatScrollStopwatch(Stopwatch::new()))
-            .add_startup_system(import_gui_sprites)
-            .add_startup_system(spawn_chatbox)
+            .add_systems(Startup, (import_gui_sprites, spawn_chatbox))
             .add_event::<GPTSayEvent>()
             .add_event::<GPTGetEvent>()
             .add_event::<CharacterSayEvent>()
             .add_event::<GUIChangeEvent>()
-            .add_system(update_chatbox)
-            .add_system(update_gui);
+            .add_systems(Update, (update_chatbox, update_gui));
     }
 }
 fn import_gui_sprites( mut game_state: ResMut<VisualNovelState>, asset_server: Res<AssetServer> ){
@@ -102,7 +100,7 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                             color: Color::WHITE,
                         })],
                     alignment: TextAlignment::Left,
-                    linebreak_behaviour: BreakLineOn::WordBoundary
+                    linebreak_behavior: BreakLineOn::WordBoundary
                 },
                 text_anchor: Anchor::TopLeft,
                 transform: Transform::from_xyz(-305., 126., 3.),
@@ -128,7 +126,7 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                             color: Color::WHITE,
                         })],
                     alignment: TextAlignment::Left,
-                    linebreak_behaviour: BreakLineOn::WordBoundary
+                    linebreak_behavior: BreakLineOn::WordBoundary
                 },
                 text_anchor: Anchor::TopLeft,
                 text_2d_bounds: Text2dBounds{ size: Vec2 { x: 700., y: 20000.} },
@@ -171,7 +169,7 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                             color: Color::WHITE,
                         })],
                     alignment: TextAlignment::Left,
-                    linebreak_behaviour: BreakLineOn::WordBoundary
+                    linebreak_behavior: BreakLineOn::WordBoundary
                 },
                 text_anchor: Anchor::TopLeft,
                 text_2d_bounds: Text2dBounds{ size: Vec2 { x: 700., y: 20000.} },
@@ -201,7 +199,7 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                         color: Color::RED,
                     })],
                 alignment: TextAlignment::Center,
-                linebreak_behaviour: BreakLineOn::WordBoundary
+                linebreak_behavior: BreakLineOn::WordBoundary,
             },
             text_anchor: Anchor::TopCenter,
             text_2d_bounds: Text2dBounds{ size: Vec2 { x: 700., y: 20000.} },
@@ -240,7 +238,7 @@ fn update_chatbox(
     };
     /* QUICK USE VARIABLES */
     // Reference to SPECIFICALLY the typing text display object.
-    // I'm well aware this is bad practice, but Bevy makes it really hard 
+    // I'm well aware this is bad practice, but Bevy makes it really hard
     // to avoid this without UNREAL levels of indent.
     // I'm a JS dev who follows Torvald's rules about indentation, cry.
     let mut name_text_option: Option<&mut Text> = None;
@@ -278,7 +276,7 @@ fn update_chatbox(
     }
     let typebox_visibility = typebox_visibility_option.expect("MISSING GUI OBJECT WITH ID '_typebox_background'!");
     let textbox_visibility = textbox_visibility_option.expect("MISSING GUI OBJECT WITH ID '_textbox_background'!");
-    
+
     // Tick clock (must be after everything)
     // basically if there's enough of a jump, it's not worth the stutters, preserve gameplay over ego :<
     let to_tick = if time.delta_seconds() > 1. { std::time::Duration::from_secs_f32(0.) } else { time.delta() };
@@ -297,10 +295,10 @@ fn update_chatbox(
             Ok(mut transitions) => {
                 println!("[ Inserting {} transitions... ]", transitions.len());
                 game_state.extra_transitions.append(&mut transitions);
-                
+
                 /* GPT CHECK - CHECK IF THE CHARACTER ACHIEVED THEIR GOAL! */
                 // Any errors here should literally result in continuation of the game.
-                // It's way easier to let the next prompt be generated, 
+                // It's way easier to let the next prompt be generated,
                 // and let the player see the dialog that was just generated anyway
                 // (plus, it could be OpenAI rate limits)
                 if let Some(goal_status) = determine_goal_status(&character, &game_state, &ev){
@@ -326,9 +324,9 @@ fn update_chatbox(
                     },
                     GPTError::LengthError => {
                         // The resulting body from OpenAI was too long. Don't know how
-                        // this could ever even happen, but just in case, it'd be a resave 
-                        // error.     
-                        error_message.push_str("Response from OpenAI too long.\nContact the dev, he doesn't actually think this error is possible.\nFalling back to last save point...");               
+                        // this could ever even happen, but just in case, it'd be a resave
+                        // error.
+                        error_message.push_str("Response from OpenAI too long.\nContact the dev, he doesn't actually think this error is possible.\nFalling back to last save point...");
                     },
                     GPTError::IOError => {
                         // Likely means that the player lost or does not have internet
@@ -434,7 +432,7 @@ fn update_chatbox(
         });
 
         message_scroll_text_obj.message = ev.message.clone();
-        
+
     }
 
     // (there needs to be a way to clean this up)
@@ -442,7 +440,7 @@ fn update_chatbox(
     if *textbox_visibility == Visibility::Hidden {
         return;
     }
-    
+
     // Take the original string from the message object
     let mut original_string: String = message_scroll_text_obj.message.clone();
 
@@ -456,10 +454,10 @@ fn update_chatbox(
     if let Some(position) = window.single().cursor_position() {
         let resolution = &window.single().resolution;
         let textbox_bounds: [f32; 4] = [
-            ( resolution.width() / 2. ) - ( 796. / 2. ),
-            ( resolution.width() / 2. ) + ( 796. / 2. ),
-            ( resolution.height() / 2. ) - ( 155. / 2. ) - ( 275. ),
-            ( resolution.height() / 2. ) + ( 155. / 2. ) - ( 275. ),
+            (resolution.width() / 2.) - (796. / 2.),
+            (resolution.width() / 2.) + (796. / 2.),
+            (resolution.height() / 2.) - (155. / 2.) + (275.),
+            (resolution.height() / 2.) + (155. / 2.) + (275.),
         ];
         if ( position.x > textbox_bounds[0] && position.x < textbox_bounds[1] ) && ( position.y > textbox_bounds[2] && position.y < textbox_bounds[3] ) && buttons.just_pressed(MouseButton::Left) {
             if length < message_scroll_text_obj.message.len() as u32 {
@@ -477,8 +475,8 @@ fn update_chatbox(
             game_state.blocking = false;
         }
     }
-            
-        
+
+
 
 }
 fn update_gui(

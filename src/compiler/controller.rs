@@ -91,9 +91,9 @@ impl Transition {
 }
 pub struct Compiler;
 impl Plugin for Compiler {
-    fn build(&self, app: &mut App){
-        app.add_startup_system(pre_compile)
-            .add_system(run_transitions);
+    fn build(&self, app: &mut App) {
+        app.add_systems(Startup, pre_compile)
+            .add_systems(Update, run_transitions);
     }
 }
 fn pre_compile( mut game_state: ResMut<VisualNovelState>){

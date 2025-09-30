@@ -12,16 +12,17 @@ pub struct Background {
 }
 
 /* Events */
+#[derive(Event)]
 pub struct BackgroundChangeEvent {
     pub background_id: String
 }
 
 pub struct BackgroundController;
 impl Plugin for BackgroundController {
-    fn build(&self, app: &mut App){
-        app.add_startup_system(import_backgrounds)
-            .add_event::<BackgroundChangeEvent>()
-            .add_system(update_background);
+    fn build(&self, app: &mut App) {
+        app.add_event::<BackgroundChangeEvent>()
+            .add_systems(Startup, import_backgrounds)
+            .add_systems(Update, update_background);
     }
 }
 pub fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){

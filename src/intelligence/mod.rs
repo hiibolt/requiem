@@ -3,25 +3,30 @@ use crate::Character;
 use crate::VisualNovelState;
 use crate::Transition;
 
+use bevy::ecs::event::Event;
 use regex::Regex;
 use serde::{ Serialize, Deserialize };
 
 
 
 /* Events */
+#[derive(Event)]
 pub struct GPTGetEvent {
     pub past_character: String,
     pub past_goal: String
 }
+#[derive(Event)]
 pub struct GPTSayEvent {
     pub name: String,
     pub goal: String,
     pub advice: Option<String>
 }
+#[derive(Event)]
 pub struct CharacterSayEvent {
     pub name: String,
     pub message: String
 }
+#[derive(Event)]
 pub struct GUIChangeEvent {
     pub gui_id: String,
     pub sprite_id: String

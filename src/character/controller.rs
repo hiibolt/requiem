@@ -24,6 +24,7 @@ pub struct CharacterSprites {
 pub struct OpacityFadeTimer(Timer);
 
 /* Events */
+#[derive(Event)]
 pub struct EmotionChangeEvent {
     pub name: String,
     pub emotion: String
@@ -31,11 +32,14 @@ pub struct EmotionChangeEvent {
 
 pub struct CharacterController;
 impl Plugin for CharacterController {
-    fn build(&self, app: &mut App){
-        app.insert_resource(OpacityFadeTimer(Timer::from_seconds(0.005, TimerMode::Repeating)))
-            .add_startup_system(import_characters)
-            .add_event::<EmotionChangeEvent>()
-            .add_system(update_characters);
+    fn build(&self, app: &mut App) {
+        app.insert_resource(OpacityFadeTimer(Timer::from_seconds(
+            0.005,
+            TimerMode::Repeating,
+        )))
+        .add_event::<EmotionChangeEvent>()
+        .add_systems(Startup, import_characters)
+        .add_systems(Update, update_characters);
     }
 }
 fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){

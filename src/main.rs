@@ -62,11 +62,13 @@ fn main() {
                 })
         ) 
         .init_resource::<VisualNovelState>()
-        .add_startup_system(setup)
-        .add_plugin(Compiler)
-        .add_plugin(BackgroundController)
-        .add_plugin(CharacterController)
-        .add_plugin(ChatController)
+        .add_systems(Startup, setup)
+        .add_plugins((
+            Compiler,
+            BackgroundController,
+            CharacterController,
+            ChatController,
+        ))
         .run();
 }
 
