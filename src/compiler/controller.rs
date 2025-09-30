@@ -5,7 +5,33 @@ use bevy::prelude::*;
 use crate::{compile_to_transitions, BackgroundChangeEvent, CharacterSayEvent, EmotionChangeEvent, GPTGetEvent, GPTSayEvent, GUIChangeEvent, VisualNovelState};
 
 
+/* States */
+#[derive(States, Debug, Default, Clone, Copy, Hash, Eq, PartialEq)]
+enum RequiemState {
+    #[default]
+    WaitingForControllers,
+    Running,
+}
+
+#[derive(Resource, Default)]
+struct ControllersReady {
+    pub background_controller: bool,
+    pub character_controller: bool,
+    pub chat_controller: bool,
+}
+
+#[derive(Event)]
+pub struct TriggerControllers;
+#[derive(Event)]
+pub struct ControllerReadyEvent(pub Controller);
+
 /* Custom Types */
+pub enum Controller {
+    Background,
+    Character,
+    Chat,
+}
+
 #[derive(Clone, Debug)]
 pub enum Transition {
     Say(String, String),
@@ -20,7 +46,7 @@ pub enum Transition {
 }
 impl Transition {
     fn call(
-        &self, 
+        &self,
         character_say_event: &mut EventWriter<CharacterSayEvent>,
         emotion_change_event: &mut EventWriter<EmotionChangeEvent>,
         background_change_event: &mut EventWriter<BackgroundChangeEvent>,
@@ -28,12 +54,12 @@ impl Transition {
         gpt_say_event: &mut EventWriter<GPTSayEvent>,
         gpt_get_event: &mut EventWriter<GPTGetEvent>,
 
-        game_state: &mut ResMut<VisualNovelState>, 
+        game_state: &mut ResMut<VisualNovelState>,
     ) {
         match self {
             Transition::Say(character_name, msg) => {
                 info!("Calling Transition::Say");
-                character_say_event.send(CharacterSayEvent {
+                character_say_event.write(CharacterSayEvent {
                     name: character_name.to_owned(),
                     message: msg.to_owned()
                 });
@@ -41,20 +67,20 @@ impl Transition {
             },
             Transition::SetEmotion(character_name, emotion) => {
                 info!("Calling Transition::SetEmotion");
-                emotion_change_event.send(EmotionChangeEvent {
+                emotion_change_event.write(EmotionChangeEvent {
                     name: character_name.to_owned(),
                     emotion: emotion.to_owned()
                 });
             }
             Transition::SetBackground(background_id) => {
                 info!("Calling Transition::SetBackground");
-                background_change_event.send(BackgroundChangeEvent {
+                background_change_event.write(BackgroundChangeEvent {
                     background_id: background_id.to_owned()
                 });
             },
             Transition::SetGUI(gui_id, sprite_id) => {
                 info!("Calling Transition::SetGUI");
-                gui_change_event.send(GUIChangeEvent {
+                gui_change_event.write(GUIChangeEvent {
                     gui_id: gui_id.to_owned(),
                     sprite_id: sprite_id.to_owned()
                 });
@@ -62,7 +88,7 @@ impl Transition {
             Transition::GPTSay(character_name, character_goal) => {
                 info!("Calling Transition::GPTSay");
                 game_state.blocking = true;
-                gpt_say_event.send(GPTSayEvent {
+                gpt_say_event.write(GPTSayEvent {
                     name: character_name.to_owned(),
                     goal: character_goal.to_owned(),
                     advice: None
@@ -71,7 +97,7 @@ impl Transition {
             Transition::GPTGet(past_character, past_goal) => {
                 info!("Calling Transition::GPTGet");
                 game_state.blocking = true;
-                gpt_get_event.send(GPTGetEvent {past_character: past_character.clone(), past_goal: past_goal.clone()});
+                gpt_get_event.write(GPTGetEvent {past_character: past_character.clone(), past_goal: past_goal.clone()});
             },
             Transition::Log(msg) => println!("{msg}"),
             Transition::Scene(id) => {
@@ -92,8 +118,35 @@ impl Transition {
 pub struct Compiler;
 impl Plugin for Compiler {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, pre_compile)
-            .add_systems(Update, run_transitions);
+        app
+            .init_state::<RequiemState>()
+            .init_resource::<ControllersReady>()
+            .add_event::<ControllerReadyEvent>()
+            .add_event::<TriggerControllers>()
+            .add_systems(Startup, pre_compile)
+            .add_systems(Update, check_states.run_if(in_state(RequiemState::WaitingForControllers)))
+            .add_systems(Update, run_transitions.run_if(in_state(RequiemState::Running)));
+    }
+}
+fn check_states(
+    mut ev_controller_reader: EventReader<ControllerReadyEvent>,
+    mut controllers_state: ResMut<ControllersReady>,
+    mut ev_writer: EventWriter<TriggerControllers>,
+    mut requiem_state: ResMut<NextState<RequiemState>>,
+) {
+    for event in ev_controller_reader.read() {
+        let controller = match event.0 {
+            Controller::Background => &mut controllers_state.background_controller,
+            Controller::Character => &mut controllers_state.character_controller,
+            Controller::Chat => &mut controllers_state.chat_controller,
+        };
+        *controller = true;
+    }
+    if controllers_state.background_controller
+       && controllers_state.character_controller
+       && controllers_state.chat_controller {
+        ev_writer.write(TriggerControllers);
+        requiem_state.set(RequiemState::Running);
     }
 }
 fn pre_compile( mut game_state: ResMut<VisualNovelState>){
@@ -139,7 +192,7 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
 
     info!("Completed pre-compilation");
 }
-fn run_transitions ( 
+fn run_transitions (
     mut character_say_event: EventWriter<CharacterSayEvent>,
     mut emotion_change_event: EventWriter<EmotionChangeEvent>,
     mut background_change_event: EventWriter<BackgroundChangeEvent>,
@@ -162,7 +215,7 @@ fn run_transitions (
                     &mut gui_change_event,
                     &mut gpt_say_event,
                     &mut gpt_get_event,
-    
+
                     &mut game_state,);
             }
         }

@@ -1,9 +1,17 @@
-use crate::{intelligence::*, Character, Object, Transition, VisualNovelState};
+use crate::{compiler::controller::{Controller, ControllerReadyEvent, TriggerControllers}, intelligence::*, Character, Object, Transition, VisualNovelState};
 
 use std::collections::HashMap;
 
-use bevy::{color::palettes::css::{RED, WHITE}, input::keyboard::{Key, KeyboardInput}, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, window::PrimaryWindow};
+use bevy::{asset::{LoadState, LoadedFolder}, color::palettes::css::{RED, WHITE}, input::keyboard::{Key, KeyboardInput}, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, window::PrimaryWindow};
 
+/* States */
+#[derive(States, Debug, Default, Clone, Copy, Hash, Eq, PartialEq)]
+enum ChatControllerState {
+    #[default]
+    Loading,
+    Idle,
+    Running,
+}
 
 /* Components */
 #[derive(Component)]
@@ -16,45 +24,139 @@ pub struct TypeBox;
 /* Resources */
 #[derive(Resource)]
 pub struct ChatScrollStopwatch(Stopwatch);
+#[derive(Resource)]
+struct HandleToGuiFolder(Handle<LoadedFolder>);
 
+/* Custom types */
+#[derive(Bundle)]
+struct TextBundle {
+    object: Object,
+    scroll_text: GUIScrollText,
+    text: Text2d,
+    layout: TextLayout,
+    font: TextFont,
+    color: TextColor,
+    anchor: Anchor,
+    transform: Transform,
+    bounds: TextBounds,
+    visibility: Visibility,
+}
+
+impl TextBundle {
+    fn new(object: Object, text: &str) -> Self {
+        Self {
+            object,
+            scroll_text: GUIScrollText { message: text.to_string() },
+            text: Text2d(text.into()),
+            layout: TextLayout::default(),
+            font: TextFont::default(),
+            color: TextColor::WHITE,
+            anchor: Anchor::TopLeft,
+            transform: Transform::default(),
+            bounds: TextBounds::default(),
+            visibility: Visibility::default()
+        }
+    }
+
+    fn with_font(self, font: TextFont) -> Self {
+        Self {
+            font,
+            ..self
+        }
+    }
+
+    fn with_layout(self, layout: TextLayout) -> Self {
+        Self {
+            layout,
+            ..self
+        }
+    }
+
+    fn with_color(self, color: TextColor) -> Self {
+        Self {
+            color,
+            ..self
+        }
+    }
+
+    fn with_anchor(self, anchor: Anchor) -> Self {
+        Self {
+            anchor,
+            ..self
+        }
+    }
+
+    fn with_transform(self, transform: Transform) -> Self {
+        Self {
+            transform,
+            ..self
+        }
+    }
+
+    fn with_bounds(self, bounds: TextBounds) -> Self {
+        Self {
+            bounds,
+            ..self
+        }
+    }
+
+    fn with_visibility(self, visibility: Visibility) -> Self {
+        Self {
+            visibility,
+            ..self
+        }
+    }
+}
 
 pub struct ChatController;
 impl Plugin for ChatController {
     fn build(&self, app: &mut App){
         app.insert_resource(ChatScrollStopwatch(Stopwatch::new()))
-            .add_systems(Startup, (import_gui_sprites, spawn_chatbox))
+            .init_state::<ChatControllerState>()
+            .add_systems(OnEnter(ChatControllerState::Loading), import_gui_sprites)
+            .add_systems(Update, setup.run_if(in_state(ChatControllerState::Loading)))
             .add_event::<GPTSayEvent>()
             .add_event::<GPTGetEvent>()
             .add_event::<CharacterSayEvent>()
             .add_event::<GUIChangeEvent>()
-            .add_systems(Update, (update_chatbox, update_gui));
+            .add_systems(Update, wait_trigger.run_if(in_state(ChatControllerState::Idle)))
+            .add_systems(OnEnter(ChatControllerState::Running), spawn_chatbox)
+            .add_systems(Update, (update_chatbox, update_gui).run_if(in_state(ChatControllerState::Running)));
     }
 }
-fn import_gui_sprites( mut game_state: ResMut<VisualNovelState>, asset_server: Res<AssetServer> ){
+fn setup(
+    asset_server: Res<AssetServer>,
+    loaded_folders: Res<Assets<LoadedFolder>>,
+    folder_handle: Res<HandleToGuiFolder>,
+    mut game_state: ResMut<VisualNovelState>,
+    mut controller_state: ResMut<NextState<ChatControllerState>>,
+    mut ev_writer: EventWriter<ControllerReadyEvent>,
+) {
     let mut gui_sprites = HashMap::<String, Handle<Image>>::new();
-    let master_gui_dir = std::env::current_dir()
-        .expect("Failed to get current directory!")
-        .join("assets")
-        .join("gui");
-    let gui_sprite_paths = std::fs::read_dir(master_gui_dir)
-        .expect("Unable to read outfit folders!")
-        .filter_map(|entry| {
-            if let Ok(entry) = entry {
-                Some(entry.path())
-            }else {
-                info!("Unable to read file! Error: `{:?}`", entry);
-                None
+    if let Some(state) = asset_server.get_load_state(folder_handle.0.id()) {
+        match state {
+            LoadState::Loaded => {
+                if let Some(loaded_folder) = loaded_folders.get(folder_handle.0.id()) {
+                    for handle in &loaded_folder.handles {
+                        let filename = handle.path().expect("Error retrieving gui path").path().file_stem().unwrap().to_string_lossy().to_string();
+                        gui_sprites.insert(filename, handle.clone().typed());
+                    }
+                }
+
+                game_state.gui_sprites = gui_sprites;
+                controller_state.set(ChatControllerState::Idle);
+                ev_writer.write(ControllerReadyEvent(Controller::Chat));
+            },
+            LoadState::Failed(e) => {
+                panic!("Error loading assets... {}", e.to_string());
             }
-        });
-    for gui_sprite_path in gui_sprite_paths {
-        let file_name = gui_sprite_path
-            .file_stem().expect("Sprite file must have complete name!")
-            .to_str().expect("Sprite file name must be valid UTF-8!")
-            .to_string();
-        println!("[ Importing GUI asset '{file_name}' ]");
-        gui_sprites.insert(file_name, asset_server.load(gui_sprite_path));
+            _ => {}
+        }
     }
-    game_state.gui_sprites = gui_sprites;
+}
+fn import_gui_sprites(mut commands: Commands, asset_server: Res<AssetServer> ){
+    let loaded_folder = asset_server.load_folder("gui");
+    commands.insert_resource(HandleToGuiFolder(loaded_folder));
 }
 fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
     // Spawn Backplate + Nameplate
@@ -77,53 +179,38 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
             Sprite::default(),
             Transform::from_xyz(-270., 105., 2.).with_scale( Vec3 { x: 0.75, y: 0.75, z: 2. } ),
         ));
-        parent.spawn((
-            Object {
-                r#type: String::from("gui"),
-                id: String::from("_name_text")
-            },
-            GUIScrollText {
-                message: String::from("UNFILLED")
-            },
-            Text2d("UNFILLED".into()),
-            TextLayout {
-                justify: JustifyText::Left,
-                linebreak: LineBreak::WordBoundary,
-            },
-            Visibility::Inherited,
-            Transform::from_xyz(-305., 126., 3.),
-            Anchor::TopLeft,
-            TextFont {
-                font: asset_server.load("fonts/ALLER.ttf"),
-                font_size: 40.0,
-                ..default()
-            },
-            TextColor(Color::Srgba(WHITE)),
-        ));
-        parent.spawn((
-            Object {
-                r#type: String::from("gui"),
-                id: String::from("_message_text")
-            },
-            GUIScrollText {
-                message: String::from("UNFILLED")
-            },
-            Text2d("UNFILLED CHAT MESSAGE".into()),
-            TextLayout {
-                justify: JustifyText::Left,
-                linebreak: LineBreak::WordBoundary
-            },
-            TextFont {
-                font: asset_server.load("fonts/BOLDITALIC.ttf"),
-                font_size: 27.0,
-                ..default()
-            },
-            TextColor(Color::Srgba(WHITE)),
-            Anchor::TopLeft,
-            Transform::from_xyz(-350., 62., 3.),
-            TextBounds{ width: Some(700.), height: Some(20000.) },
-            Visibility::Inherited,
-        ));
+        parent.spawn(
+            TextBundle::new(
+                Object {
+                    r#type: String::from("gui"),
+                    id: String::from("_name_text")
+                },
+                "UNFILLED"
+            )
+            .with_font(TextFont {
+                           font: asset_server.load("fonts/ALLER.ttf"),
+                           font_size: 40.0,
+                           ..default()
+                       })
+            .with_anchor(Anchor::TopLeft)
+            .with_transform(Transform::from_xyz(-305., 126., 3.))
+        );
+        parent.spawn(
+            TextBundle::new(
+                Object {
+                    r#type: String::from("gui"),
+                    id: String::from("_message_text")
+                },
+                "UNFILLED"
+            )
+            .with_font(TextFont {
+                           font: asset_server.load("fonts/BOLDITALIC.ttf"),
+                           font_size: 27.0,
+                           ..default()
+                       })
+            .with_anchor(Anchor::TopLeft)
+            .with_transform(Transform::from_xyz(-350., 62., 3.))
+            .with_bounds(TextBounds { width: Some(700.), height: Some(107.) }));
     });
 
     // Spawn typebox
@@ -138,60 +225,48 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
         TypeBox
     ))
     .with_children(|parent| {
-        parent.spawn((
-            Object {
-                r#type: String::from("gui"),
-                id: String::from("_type_text")
-            },
-            GUIScrollText {
-                message: String::from("UNFILLED")
-            },
-            Text2d("Start typing...".into()),
-            TextFont {
-                font: asset_server.load("fonts/BOLDITALIC.ttf"),
-                font_size: 27.0,
-                ..default()
-            },
-            TextColor(Color::Srgba(WHITE)),
-            TextLayout {
-                justify: JustifyText::Left,
-                linebreak: LineBreak::WordBoundary,
-            },
-            Anchor::TopLeft,
-            TextBounds { width: Some(700.), height: Some(20000.) },
-            Transform::from_xyz(-350., 62., 3.),
-            Visibility::Inherited,
-        ));
+        parent.spawn(
+            TextBundle::new(
+                Object {
+                    r#type: String::from("gui"),
+                    id: String::from("_type_text")
+                },
+                "Start typing..."
+            )
+            .with_font(TextFont {
+                           font: asset_server.load("fonts/BOLDITALIC.ttf"),
+                           font_size: 27.0,
+                           ..default()
+                       })
+            .with_anchor(Anchor::TopLeft)
+            .with_transform(Transform::from_xyz(-350., 62., 3.))
+            .with_bounds(TextBounds { width: Some(700.), height: Some(20000.) })
+        );
     });
 
-    // Spawn info text
-    commands.spawn((
-        Object {
-            r#type: String::from("gui"),
-            id: String::from("_info_text")
-        },
-        GUIScrollText {
-            message: String::from("WILL ALWAYS BE BLANK, YOU SHOULD CREATE DIFF TYPE")
-        },
-        Text2d("".into()),
-        TextFont {
-            font: asset_server.load("fonts/BOLD.ttf"),
-            font_size: 50.,
-            ..default()
-        },
-        TextBounds {
-            width: Some(700.),
-            height: Some(20000.),
-        },
-        TextColor(Color::Srgba(RED)),
-        TextLayout {
-            justify: JustifyText::Center,
-            linebreak: LineBreak::WordBoundary,
-        },
-        Anchor::TopCenter,
-        Transform::from_xyz(0., 302., 3.),
-        Visibility::Visible,
-    ));
+    commands.spawn(
+        TextBundle::new(
+            Object {
+                r#type: String::from("gui"),
+                id: String::from("_info_text")
+            },
+            "",
+        )
+        .with_font(TextFont {
+                       font: asset_server.load("fonts/BOLD.ttf"),
+                       font_size: 50.,
+                       ..default()
+                   })
+        .with_anchor(Anchor::TopCenter)
+        .with_layout(TextLayout {
+                         justify: JustifyText::Center,
+                         linebreak: LineBreak::WordBoundary,
+                     })
+        .with_color(TextColor(Color::Srgba(RED)))
+        .with_transform(Transform::from_xyz(0., 302., 3.))
+        .with_visibility(Visibility::Visible)
+        .with_bounds(TextBounds { width: Some(700.), height: None })
+    );
 }
 fn update_chatbox(
     mut event_message: EventReader<CharacterSayEvent>,
@@ -407,12 +482,17 @@ fn update_chatbox(
         let mut name = format!("[{}]", game_state.playername.clone());
         let mut emotion = String::from("");
         for character in character_query.iter() {
+            let emotion_str = match &character.emotion {
+                Some(emotion) => emotion,
+                None => continue
+            };
             if character.name == ev.name {
                 name = format!("[{}]", character.name);
-                emotion = format!("[{}]", character.emotion);
+                emotion = format!("[{}]", emotion_str);
             }
         }
 
+        println!("MESSAGE {}", ev.message);
         game_state.past_messages.push( Message {
             role,
             content: format!("{}{}: {}", name, emotion, ev.message.clone()),
@@ -438,8 +518,15 @@ fn update_chatbox(
     original_string.truncate(length as usize);
     message_text.0 = original_string;
 
-    if let Some(position) = window.single().cursor_position() {
-        let resolution = &window.single().resolution;
+    if window.is_empty() {
+        eprintln!("Error querying for window");
+        return;
+    }
+
+    let window = window.single().unwrap();
+
+    if let Some(position) = window.cursor_position() {
+        let resolution = &window.resolution;
         let textbox_bounds: [f32; 4] = [
             (resolution.width() / 2.) - (796. / 2.),
             (resolution.width() / 2.) + (796. / 2.),
@@ -461,6 +548,14 @@ fn update_chatbox(
             // Allow transitions to be run again
             game_state.blocking = false;
         }
+    }
+}
+fn wait_trigger(
+    mut ev_reader: EventReader<TriggerControllers>,
+    mut controller_state: ResMut<NextState<ChatControllerState>>,
+) {
+    if ev_reader.read().count() > 0 {
+        controller_state.set(ChatControllerState::Running);
     }
 }
 fn update_gui(

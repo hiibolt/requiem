@@ -10,6 +10,7 @@ use crate::chat::*;
 use crate::intelligence::*;
 use crate::compiler::*;
 
+use bevy::asset::AssetLoader;
 use bevy::{
     prelude::*,
     window::*,
@@ -17,7 +18,41 @@ use bevy::{
 };
 use std::vec::IntoIter;
 use std::collections::HashMap;
+use thiserror::Error;
 
+#[derive(Debug, Error)]
+pub enum CharacterJsonError {
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("JSON parse error: {0}")]
+    Serde(#[from] serde_json::Error),
+}
+
+#[derive(Default)]
+pub struct CharacterJsonLoader;
+impl AssetLoader for CharacterJsonLoader {
+    type Asset = Character;
+    type Settings = ();
+    type Error = CharacterJsonError;
+
+    fn load(
+            &self,
+            reader: &mut dyn bevy::asset::io::Reader,
+            _settings: &Self::Settings,
+            _load_context: &mut bevy::asset::LoadContext,
+        ) -> impl bevy::tasks::ConditionalSendFuture<Output = std::result::Result<Self::Asset, Self::Error>> {
+        Box::pin(async move {
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await?;
+            let parsed: Character = serde_json::from_slice(&bytes)?;
+            Ok(parsed)
+        })
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["json"]
+    }
+}
 
 #[derive(Component)]
 struct Object {
@@ -60,6 +95,8 @@ fn main() {
                 })
         )
         .init_resource::<VisualNovelState>()
+        .init_asset::<Character>()
+        .init_asset_loader::<CharacterJsonLoader>()
         .add_systems(Startup, setup)
         .add_plugins((
             Compiler,
