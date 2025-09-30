@@ -69,7 +69,7 @@ pub fn update_background(
 
     mut background_change_event: EventReader<BackgroundChangeEvent>,
 ){
-    for ev in background_change_event.iter() {
+    for ev in background_change_event.read() {
         for (background_obj, mut current_sprite) in background_query.iter_mut() {
             *current_sprite = background_obj.background_sprites.get(&ev.background_id)
                 .expect("'{character.outfit}' attribute does not exist!")

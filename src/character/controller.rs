@@ -149,7 +149,7 @@ fn update_characters(
     _text_object_query: Query<(&mut Text, &mut GUIScrollText)>,
     _scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 ){
-    for ev in event_emotion_change.iter() {
+    for ev in event_emotion_change.read() {
         for (mut character, sprites, mut current_sprite) in character_query.iter_mut() {
             if character.name == ev.name {
                 character.emotion = ev.emotion.to_owned();

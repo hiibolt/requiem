@@ -1,9 +1,9 @@
-use crate::info;
 use crate::Character;
 use crate::VisualNovelState;
 use crate::Transition;
 
 use bevy::ecs::event::Event;
+use bevy::log::info;
 use regex::Regex;
 use serde::{ Serialize, Deserialize };
 

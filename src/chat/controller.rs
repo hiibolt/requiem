@@ -283,7 +283,7 @@ fn update_chatbox(
     scroll_stopwatch.0.tick(to_tick);
 
     /* GPT EVENTS [Transition::GPTSay] */
-    for ev in gpt_message.iter() {
+    for ev in gpt_message.read() {
         // Grab the character by reference matching the one notated in the event
         let character: &Character = find_character(&ev.name).expect("Couldn't find associated character!");
 
@@ -359,7 +359,7 @@ fn update_chatbox(
     }
 
     /* GPT GET (Input) Event INITIALIZATION [Transition::GPTGet] */
-    for ev in get_message.iter() {
+    for ev in get_message.read() {
         game_state.blocking = true;
 
         // Make the parent typebox visible
@@ -373,7 +373,7 @@ fn update_chatbox(
 
     /* GPT GET (Input) Event ONGOING [Transition::GPTGet] */
     // For each character input
-    for event in events.iter() {
+    for event in events.read() {
         match event.char.escape_default().collect::<String>().as_str() {
             "\\u{8}" => { // If BACKSPACE, remove a character
                 type_text.sections[0].value.pop();
@@ -401,7 +401,7 @@ fn update_chatbox(
     }
 
     /* STANDARD SAY EVENTS INITIALIZATION [Transition::Say] */
-    for ev in event_message.iter() {
+    for ev in event_message.read() {
         game_state.blocking = true;
 
         // Make the parent textbox visible
@@ -485,7 +485,7 @@ fn update_gui(
 
     game_state: Res<VisualNovelState>
 ) {
-    for ev in event_change.iter() {
+    for ev in event_change.read() {
         for (gui_obj, mut current_sprite) in gui_query.iter_mut() {
             if gui_obj.id == ev.gui_id {
                 *current_sprite = game_state.gui_sprites.get(&ev.sprite_id)
