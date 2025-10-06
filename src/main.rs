@@ -74,18 +74,22 @@ pub struct VisualNovelState {
 
     extra_transitions: Vec<Transition>,
 
-    past_messages: Vec<Message>,
+    past_messages: Vec<CustomMessage>,
 
     blocking: bool,
 }
 
 fn main() {
+    if let Err(_) = std::env::var("OPENAI_API_KEY") {
+        panic!("Environment variable OPENAI_API_KEY needs to be set!");
+    }
+
     App::new()
         .add_plugins(DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: String::from("Ettethread - Requiem"),
-                    resolution: (1280., 800.).into(),
+                    resolution: (1280, 800).into(),
                     present_mode: PresentMode::AutoVsync,
                     // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
                     prevent_default_event_handling: false,
@@ -114,7 +118,7 @@ fn setup(
     // These are constants which would normally
     //  be filled in by the player
     game_state.playername = String::from("Bolt");
-    game_state.api_key = std::env::var("OPENAI_API_KEY").expect("Environment variable OPENAI_API_KEY needs to be set!");
+    game_state.api_key = std::env::var("OPENAI_API_KEY").unwrap();
 
     // Create our primary camera (which is
     //  necessary even for 2D games)

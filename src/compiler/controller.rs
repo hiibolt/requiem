@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 
-use crate::{compile_to_transitions, BackgroundChangeEvent, CharacterSayEvent, EmotionChangeEvent, GPTGetEvent, GPTSayEvent, GUIChangeEvent, VisualNovelState};
+use crate::{compile_to_transitions, BackgroundChangeMessage, CharacterSayMessage, EmotionChangeMessage, GPTGetMessage, GPTSayMessage, GUIChangeMessage, VisualNovelState};
 
 
 /* States */
@@ -20,10 +20,11 @@ struct ControllersReady {
     pub chat_controller: bool,
 }
 
-#[derive(Event)]
-pub struct TriggerControllers;
-#[derive(Event)]
-pub struct ControllerReadyEvent(pub Controller);
+/* Messages */
+#[derive(Message)]
+pub struct TriggerControllersMessage;
+#[derive(Message)]
+pub struct ControllerReadyMessage(pub Controller);
 
 /* Custom Types */
 pub enum Controller {
@@ -47,19 +48,19 @@ pub enum Transition {
 impl Transition {
     fn call(
         &self,
-        character_say_event: &mut EventWriter<CharacterSayEvent>,
-        emotion_change_event: &mut EventWriter<EmotionChangeEvent>,
-        background_change_event: &mut EventWriter<BackgroundChangeEvent>,
-        gui_change_event: &mut EventWriter<GUIChangeEvent>,
-        gpt_say_event: &mut EventWriter<GPTSayEvent>,
-        gpt_get_event: &mut EventWriter<GPTGetEvent>,
+        character_say_message: &mut MessageWriter<CharacterSayMessage>,
+        emotion_change_message: &mut MessageWriter<EmotionChangeMessage>,
+        background_change_message: &mut MessageWriter<BackgroundChangeMessage>,
+        gui_change_message: &mut MessageWriter<GUIChangeMessage>,
+        gpt_say_message: &mut MessageWriter<GPTSayMessage>,
+        gpt_get_message: &mut MessageWriter<GPTGetMessage>,
 
         game_state: &mut ResMut<VisualNovelState>,
     ) {
         match self {
             Transition::Say(character_name, msg) => {
                 info!("Calling Transition::Say");
-                character_say_event.write(CharacterSayEvent {
+                character_say_message.write(CharacterSayMessage {
                     name: character_name.to_owned(),
                     message: msg.to_owned()
                 });
@@ -67,20 +68,20 @@ impl Transition {
             },
             Transition::SetEmotion(character_name, emotion) => {
                 info!("Calling Transition::SetEmotion");
-                emotion_change_event.write(EmotionChangeEvent {
+                emotion_change_message.write(EmotionChangeMessage {
                     name: character_name.to_owned(),
                     emotion: emotion.to_owned()
                 });
             }
             Transition::SetBackground(background_id) => {
                 info!("Calling Transition::SetBackground");
-                background_change_event.write(BackgroundChangeEvent {
+                background_change_message.write(BackgroundChangeMessage {
                     background_id: background_id.to_owned()
                 });
             },
             Transition::SetGUI(gui_id, sprite_id) => {
                 info!("Calling Transition::SetGUI");
-                gui_change_event.write(GUIChangeEvent {
+                gui_change_message.write(GUIChangeMessage {
                     gui_id: gui_id.to_owned(),
                     sprite_id: sprite_id.to_owned()
                 });
@@ -88,7 +89,7 @@ impl Transition {
             Transition::GPTSay(character_name, character_goal) => {
                 info!("Calling Transition::GPTSay");
                 game_state.blocking = true;
-                gpt_say_event.write(GPTSayEvent {
+                gpt_say_message.write(GPTSayMessage {
                     name: character_name.to_owned(),
                     goal: character_goal.to_owned(),
                     advice: None
@@ -97,7 +98,7 @@ impl Transition {
             Transition::GPTGet(past_character, past_goal) => {
                 info!("Calling Transition::GPTGet");
                 game_state.blocking = true;
-                gpt_get_event.write(GPTGetEvent {past_character: past_character.clone(), past_goal: past_goal.clone()});
+                gpt_get_message.write(GPTGetMessage {past_character: past_character.clone(), past_goal: past_goal.clone()});
             },
             Transition::Log(msg) => println!("{msg}"),
             Transition::Scene(id) => {
@@ -121,20 +122,20 @@ impl Plugin for Compiler {
         app
             .init_state::<RequiemState>()
             .init_resource::<ControllersReady>()
-            .add_event::<ControllerReadyEvent>()
-            .add_event::<TriggerControllers>()
+            .add_message::<ControllerReadyMessage>()
+            .add_message::<TriggerControllersMessage>()
             .add_systems(Startup, pre_compile)
             .add_systems(Update, check_states.run_if(in_state(RequiemState::WaitingForControllers)))
             .add_systems(Update, run_transitions.run_if(in_state(RequiemState::Running)));
     }
 }
 fn check_states(
-    mut ev_controller_reader: EventReader<ControllerReadyEvent>,
+    mut msg_controller_reader: MessageReader<ControllerReadyMessage>,
     mut controllers_state: ResMut<ControllersReady>,
-    mut ev_writer: EventWriter<TriggerControllers>,
+    mut msg_writer: MessageWriter<TriggerControllersMessage>,
     mut requiem_state: ResMut<NextState<RequiemState>>,
 ) {
-    for event in ev_controller_reader.read() {
+    for event in msg_controller_reader.read() {
         let controller = match event.0 {
             Controller::Background => &mut controllers_state.background_controller,
             Controller::Character => &mut controllers_state.character_controller,
@@ -145,7 +146,7 @@ fn check_states(
     if controllers_state.background_controller
        && controllers_state.character_controller
        && controllers_state.chat_controller {
-        ev_writer.write(TriggerControllers);
+        msg_writer.write(TriggerControllersMessage);
         requiem_state.set(RequiemState::Running);
     }
 }
@@ -193,12 +194,12 @@ fn pre_compile( mut game_state: ResMut<VisualNovelState>){
     info!("Completed pre-compilation");
 }
 fn run_transitions (
-    mut character_say_event: EventWriter<CharacterSayEvent>,
-    mut emotion_change_event: EventWriter<EmotionChangeEvent>,
-    mut background_change_event: EventWriter<BackgroundChangeEvent>,
-    mut gui_change_event: EventWriter<GUIChangeEvent>,
-    mut gpt_say_event: EventWriter<GPTSayEvent>,
-    mut gpt_get_event: EventWriter<GPTGetEvent>,
+    mut character_say_message: MessageWriter<CharacterSayMessage>,
+    mut emotion_change_message: MessageWriter<EmotionChangeMessage>,
+    mut background_change_message: MessageWriter<BackgroundChangeMessage>,
+    mut gui_change_message: MessageWriter<GUIChangeMessage>,
+    mut gpt_say_message: MessageWriter<GPTSayMessage>,
+    mut gpt_get_message: MessageWriter<GPTGetMessage>,
 
     mut game_state: ResMut<VisualNovelState>,
 ) {
@@ -209,12 +210,12 @@ fn run_transitions (
             }
             if let Some(transition) = game_state.extra_transitions.pop() {
                 transition.call(
-                    &mut character_say_event,
-                    &mut emotion_change_event,
-                    &mut background_change_event,
-                    &mut gui_change_event,
-                    &mut gpt_say_event,
-                    &mut gpt_get_event,
+                    &mut character_say_message,
+                    &mut emotion_change_message,
+                    &mut background_change_message,
+                    &mut gui_change_message,
+                    &mut gpt_say_message,
+                    &mut gpt_get_message,
 
                     &mut game_state,);
             }
@@ -225,12 +226,12 @@ fn run_transitions (
         match game_state.transitions_iter.next() {
             Some(transition) => {
                 transition.call(
-                    &mut character_say_event,
-                    &mut emotion_change_event,
-                    &mut background_change_event,
-                    &mut gui_change_event,
-                    &mut gpt_say_event,
-                    &mut gpt_get_event,
+                    &mut character_say_message,
+                    &mut emotion_change_message,
+                    &mut background_change_message,
+                    &mut gui_change_message,
+                    &mut gpt_say_message,
+                    &mut gpt_get_message,
 
                     &mut game_state,);
             },

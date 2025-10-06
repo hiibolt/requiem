@@ -4,7 +4,7 @@ use bevy::asset::{LoadState, LoadedFolder};
 use bevy::prelude::*;
 use bevy::{app::{App, Plugin}, asset::{AssetServer, Handle}};
 
-use crate::compiler::controller::{Controller, ControllerReadyEvent, TriggerControllers};
+use crate::compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage};
 use crate::{Character, Object};
 
 /* States */
@@ -26,16 +26,16 @@ pub struct Background {
 #[derive(Resource)]
 struct HandleToBackgroundsFolder(Handle<LoadedFolder>);
 
-/* Events */
-#[derive(Event)]
-pub struct BackgroundChangeEvent {
+/* Messages */
+#[derive(Message)]
+pub struct BackgroundChangeMessage {
     pub background_id: String
 }
 
 pub struct BackgroundController;
 impl Plugin for BackgroundController {
     fn build(&self, app: &mut App) {
-        app.add_event::<BackgroundChangeEvent>()
+        app.add_message::<BackgroundChangeMessage>()
             .init_state::<BackgroundControllerState>()
             .add_systems(OnEnter(BackgroundControllerState::Loading), import_backgrounds)
             .add_systems(Update, setup.run_if(in_state(BackgroundControllerState::Loading)))
@@ -49,7 +49,7 @@ fn setup(
     loaded_folders: Res<Assets<LoadedFolder>>,
     folder_handle: Res<HandleToBackgroundsFolder>,
     mut controller_state: ResMut<NextState<BackgroundControllerState>>,
-    mut ev_writer: EventWriter<ControllerReadyEvent>,
+    mut msg_writer: MessageWriter<ControllerReadyMessage>,
 ) {
     let mut background_sprites: HashMap<String, Handle<Image>>= HashMap::new();
 
@@ -76,7 +76,7 @@ fn setup(
                     Sprite::default()
                 ));
                 controller_state.set(BackgroundControllerState::Idle);
-                ev_writer.write(ControllerReadyEvent(Controller::Background));
+                msg_writer.write(ControllerReadyMessage(Controller::Background));
             },
             LoadState::Failed(e) => {
                 panic!("Error loading assets... {}", e.to_string());
@@ -90,10 +90,10 @@ pub fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>
     commands.insert_resource(HandleToBackgroundsFolder(loaded_folder));
 }
 fn wait_trigger(
-    mut ev_reader: EventReader<TriggerControllers>,
+    mut msg_reader: MessageReader<TriggerControllersMessage>,
     mut controller_state: ResMut<NextState<BackgroundControllerState>>,
 ) {
-    if ev_reader.read().count() > 0 {
+    if msg_reader.read().count() > 0 {
         controller_state.set(BackgroundControllerState::Running);
     }
 }
@@ -103,14 +103,14 @@ pub fn update_background(
         &mut Sprite
     ), (With<Background>, Without<Character>)>,
 
-    mut background_change_event: EventReader<BackgroundChangeEvent>,
+    mut background_change_message: MessageReader<BackgroundChangeMessage>,
 ){
-    for ev in background_change_event.read() {
+    for msg in background_change_message.read() {
         for (background_obj, mut current_sprite) in background_query.iter_mut() {
-            current_sprite.image = background_obj.background_sprites.get(&ev.background_id)
+            current_sprite.image = background_obj.background_sprites.get(&msg.background_id)
                 .expect("background does not exist!")
                 .clone();
-            println!("[ Set background to '{}']", ev.background_id);
+            println!("[ Set background to '{}']", msg.background_id);
         }
     }
 }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use bevy::{asset::{LoadState, LoadedFolder}, prelude::*};
 use serde::Deserialize;
 
-use crate::{compiler::controller::{Controller, ControllerReadyEvent, TriggerControllers}, Background, ChatScrollStopwatch, GUIScrollText, Object};
+use crate::{compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage}, Background, ChatScrollStopwatch, GUIScrollText, Object};
 
 /* States */
 #[derive(States, Debug, Default, Clone, Copy, Hash, Eq, PartialEq)]
@@ -41,9 +41,9 @@ struct HandleToCharactersFolder(Handle<LoadedFolder>);
 #[derive(Resource)]
 struct CharacterToAssets(HashMap<String, CharacterSprites>);
 
-/* Events */
-#[derive(Event)]
-pub struct EmotionChangeEvent {
+/* Messages */
+#[derive(Message)]
+pub struct EmotionChangeMessage {
     pub name: String,
     pub emotion: String
 }
@@ -55,7 +55,7 @@ impl Plugin for CharacterController {
             0.005,
             TimerMode::Repeating,
         )))
-        .add_event::<EmotionChangeEvent>()
+        .add_message::<EmotionChangeMessage>()
         .init_state::<CharacterControllerState>()
         .add_systems(OnEnter(CharacterControllerState::Loading), import_characters)
         .add_systems(Update, setup.run_if(in_state(CharacterControllerState::Loading)))
@@ -70,7 +70,7 @@ fn setup(
     loaded_folders: Res<Assets<LoadedFolder>>,
     folder_handle: Res<HandleToCharactersFolder>,
     mut controller_state: ResMut<NextState<CharacterControllerState>>,
-    mut ev_writer: EventWriter<ControllerReadyEvent>,
+    mut ev_writer: MessageWriter<ControllerReadyMessage>,
 ) {
     if let Some(state) = asset_server.get_load_state(folder_handle.0.id()) {
         match state {
@@ -124,7 +124,7 @@ fn setup(
                         }
                     }
                     commands.insert_resource(CharacterToAssets(characters));
-                    ev_writer.write(ControllerReadyEvent(Controller::Character));
+                    ev_writer.write(ControllerReadyMessage(Controller::Character));
                 }
                 controller_state.set(CharacterControllerState::Idle);
             },
@@ -140,10 +140,10 @@ fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
     commands.insert_resource(HandleToCharactersFolder(loaded_folder));
 }
 fn wait_trigger(
-    mut ev_reader: EventReader<TriggerControllers>,
+    mut msg_reader: MessageReader<TriggerControllersMessage>,
     mut controller_state: ResMut<NextState<CharacterControllerState>>,
 ) {
-    if ev_reader.read().count() > 0 {
+    if msg_reader.read().count() > 0 {
         controller_state.set(CharacterControllerState::Running);
     }
 }
@@ -188,15 +188,15 @@ fn update_characters(
         &CharacterSprites,
         &mut Sprite
     ), (With<Character>, Without<Background>)>,
-    mut event_emotion_change: EventReader<EmotionChangeEvent>,
+    mut message_emotion_change: MessageReader<EmotionChangeMessage>,
 
     _text_object_query: Query<(&mut Text, &mut GUIScrollText)>,
     _scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 ){
-    for ev in event_emotion_change.read() {
+    for msg in message_emotion_change.read() {
         for (mut character, sprites, mut current_sprite) in character_query.iter_mut() {
-            if character.name == ev.name {
-                character.emotion = Some(ev.emotion.to_owned());
+            if character.name == msg.name {
+                character.emotion = Some(msg.emotion.to_owned());
                 let outfit = match &character.outfit {
                     Some(outfit) => outfit,
                     None => {
@@ -216,7 +216,7 @@ fn update_characters(
                     .get(emotion)
                     .expect("'default_emotion' atttribute does not exist!")
                     .clone();
-                println!("[ Set emotion of '{}' to '{}']", ev.name, ev.emotion);
+                println!("[ Set emotion of '{}' to '{}']", msg.name, msg.emotion);
             }
         }
     }

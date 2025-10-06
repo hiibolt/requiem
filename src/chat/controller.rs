@@ -1,8 +1,8 @@
-use crate::{compiler::controller::{Controller, ControllerReadyEvent, TriggerControllers}, intelligence::*, Character, Object, Transition, VisualNovelState};
+use crate::{compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage}, intelligence::*, Character, Object, Transition, VisualNovelState};
 
 use std::collections::HashMap;
 
-use bevy::{asset::{LoadState, LoadedFolder}, color::palettes::css::{RED, WHITE}, input::keyboard::{Key, KeyboardInput}, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, window::PrimaryWindow};
+use bevy::{asset::{LoadState, LoadedFolder}, color::palettes::css::RED, input::keyboard::{Key, KeyboardInput}, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, window::PrimaryWindow};
 
 /* States */
 #[derive(States, Debug, Default, Clone, Copy, Hash, Eq, PartialEq)]
@@ -51,7 +51,7 @@ impl TextBundle {
             layout: TextLayout::default(),
             font: TextFont::default(),
             color: TextColor::WHITE,
-            anchor: Anchor::TopLeft,
+            anchor: Anchor::TOP_LEFT,
             transform: Transform::default(),
             bounds: TextBounds::default(),
             visibility: Visibility::default()
@@ -115,10 +115,10 @@ impl Plugin for ChatController {
             .init_state::<ChatControllerState>()
             .add_systems(OnEnter(ChatControllerState::Loading), import_gui_sprites)
             .add_systems(Update, setup.run_if(in_state(ChatControllerState::Loading)))
-            .add_event::<GPTSayEvent>()
-            .add_event::<GPTGetEvent>()
-            .add_event::<CharacterSayEvent>()
-            .add_event::<GUIChangeEvent>()
+            .add_message::<GPTSayMessage>()
+            .add_message::<GPTGetMessage>()
+            .add_message::<CharacterSayMessage>()
+            .add_message::<GUIChangeMessage>()
             .add_systems(Update, wait_trigger.run_if(in_state(ChatControllerState::Idle)))
             .add_systems(OnEnter(ChatControllerState::Running), spawn_chatbox)
             .add_systems(Update, (update_chatbox, update_gui).run_if(in_state(ChatControllerState::Running)));
@@ -130,7 +130,7 @@ fn setup(
     folder_handle: Res<HandleToGuiFolder>,
     mut game_state: ResMut<VisualNovelState>,
     mut controller_state: ResMut<NextState<ChatControllerState>>,
-    mut ev_writer: EventWriter<ControllerReadyEvent>,
+    mut msg_writer: MessageWriter<ControllerReadyMessage>,
 ) {
     let mut gui_sprites = HashMap::<String, Handle<Image>>::new();
     if let Some(state) = asset_server.get_load_state(folder_handle.0.id()) {
@@ -145,7 +145,7 @@ fn setup(
 
                 game_state.gui_sprites = gui_sprites;
                 controller_state.set(ChatControllerState::Idle);
-                ev_writer.write(ControllerReadyEvent(Controller::Chat));
+                msg_writer.write(ControllerReadyMessage(Controller::Chat));
             },
             LoadState::Failed(e) => {
                 panic!("Error loading assets... {}", e.to_string());
@@ -192,7 +192,7 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                            font_size: 40.0,
                            ..default()
                        })
-            .with_anchor(Anchor::TopLeft)
+            .with_anchor(Anchor::TOP_LEFT)
             .with_transform(Transform::from_xyz(-305., 126., 3.))
         );
         parent.spawn(
@@ -208,7 +208,7 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                            font_size: 27.0,
                            ..default()
                        })
-            .with_anchor(Anchor::TopLeft)
+            .with_anchor(Anchor::TOP_LEFT)
             .with_transform(Transform::from_xyz(-350., 62., 3.))
             .with_bounds(TextBounds { width: Some(700.), height: Some(107.) }));
     });
@@ -238,7 +238,7 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                            font_size: 27.0,
                            ..default()
                        })
-            .with_anchor(Anchor::TopLeft)
+            .with_anchor(Anchor::TOP_LEFT)
             .with_transform(Transform::from_xyz(-350., 62., 3.))
             .with_bounds(TextBounds { width: Some(700.), height: Some(20000.) })
         );
@@ -257,9 +257,9 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                        font_size: 50.,
                        ..default()
                    })
-        .with_anchor(Anchor::TopCenter)
+        .with_anchor(Anchor::TOP_CENTER)
         .with_layout(TextLayout {
-                         justify: JustifyText::Center,
+                         justify: Justify::Center,
                          linebreak: LineBreak::WordBoundary,
                      })
         .with_color(TextColor(Color::Srgba(RED)))
@@ -269,15 +269,15 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
     );
 }
 fn update_chatbox(
-    mut event_message: EventReader<CharacterSayEvent>,
-    mut gpt_message: EventReader<GPTSayEvent>,
-    mut get_message: EventReader<GPTGetEvent>,
+    mut event_message: MessageReader<CharacterSayMessage>,
+    mut gpt_message: MessageReader<GPTSayMessage>,
+    mut get_message: MessageReader<GPTGetMessage>,
     character_query: Query<&Character>,
     mut visibility_query: Query<(&mut Visibility, &Object)>,
     mut text_object_query: Query<(&mut Text2d, &mut GUIScrollText, &Object), Without<TypeBox>>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 
-    mut events: EventReader<KeyboardInput>,
+    mut input_messages: MessageReader<KeyboardInput>,
 
     mut game_state: ResMut<VisualNovelState>,
 
@@ -432,7 +432,7 @@ fn update_chatbox(
 
     /* GPT GET (Input) Event ONGOING [Transition::GPTGet] */
     // For each character input
-    for event in events.read() {
+    for event in input_messages.read() {
         match event.key_code {
             KeyCode::Backspace => { // If BACKSPACE, remove a character
                 type_text.0.pop();
@@ -445,7 +445,7 @@ fn update_chatbox(
 
                 // Add the typed message
                 let name = game_state.playername.clone();
-                game_state.past_messages.push( Message {
+                game_state.past_messages.push(CustomMessage {
                     role: String::from("user"),
                     content: format!("{}: {}", name, type_text.0.clone()),
                 });
@@ -493,7 +493,7 @@ fn update_chatbox(
         }
 
         println!("MESSAGE {}", ev.message);
-        game_state.past_messages.push( Message {
+        game_state.past_messages.push(CustomMessage {
             role,
             content: format!("{}{}: {}", name, emotion, ev.message.clone()),
         });
@@ -551,20 +551,20 @@ fn update_chatbox(
     }
 }
 fn wait_trigger(
-    mut ev_reader: EventReader<TriggerControllers>,
+    mut msg_reader: MessageReader<TriggerControllersMessage>,
     mut controller_state: ResMut<NextState<ChatControllerState>>,
 ) {
-    if ev_reader.read().count() > 0 {
+    if msg_reader.read().count() > 0 {
         controller_state.set(ChatControllerState::Running);
     }
 }
 fn update_gui(
-    mut event_change: EventReader<GUIChangeEvent>,
+    mut change_messages: MessageReader<GUIChangeMessage>,
     mut gui_query: Query<(&Object, &mut Sprite)>,
 
     game_state: Res<VisualNovelState>
 ) {
-    for ev in event_change.read() {
+    for ev in change_messages.read() {
         for (gui_obj, mut current_sprite) in gui_query.iter_mut() {
             if gui_obj.id == ev.gui_id {
                 current_sprite.image = game_state.gui_sprites.get(&ev.sprite_id)
