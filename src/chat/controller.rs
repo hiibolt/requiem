@@ -520,7 +520,7 @@ fn update_chatbox(
     original_string.truncate(length as usize);
     message_text.0 = original_string;
 
-    let window = match window.get_single() {
+    let window = match window.single() {
         Ok(window) => window,
         Err(_) => {
             eprintln!("Error querying for window");

@@ -52,8 +52,6 @@
 
             # GTK + Wayland
             wayland
-            gtk3-x11
-            gtk3
           ]) ++ (with pkgs.xorg; [
             libX11
             libXcursor 
