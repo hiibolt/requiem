@@ -457,7 +457,9 @@ fn update_chatbox(
         }
         if let Key::Character(char) = &event.logical_key {
             if type_text.0.len() < 310 {
-                type_text.0.push(char.chars().next().expect("Empty string"));
+                if let Some(c) = char.chars().next() {
+                    type_text.0.push(c);
+                }
             }
         }
     }
