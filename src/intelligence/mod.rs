@@ -1,42 +1,45 @@
-use crate::info;
 use crate::Character;
 use crate::VisualNovelState;
 use crate::Transition;
 
+use bevy::prelude::Message;
+use bevy::log::info;
 use regex::Regex;
 use serde::{ Serialize, Deserialize };
 
-
-
-/* Events */
-pub struct GPTGetEvent {
+/* Messages */
+#[derive(Message)]
+pub struct GPTGetMessage {
     pub past_character: String,
     pub past_goal: String
 }
-pub struct GPTSayEvent {
+#[derive(Message)]
+pub struct GPTSayMessage {
     pub name: String,
     pub goal: String,
     pub advice: Option<String>
 }
-pub struct CharacterSayEvent {
+#[derive(Message)]
+pub struct CharacterSayMessage {
     pub name: String,
     pub message: String
 }
-pub struct GUIChangeEvent {
+#[derive(Message)]
+pub struct GUIChangeMessage {
     pub gui_id: String,
     pub sprite_id: String
 }
 
 /* Custom Types */
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Message {
+pub struct CustomMessage {
     pub role: String,
     pub content: String
 }
 #[derive(Deserialize, Debug)]
 pub struct ChatChoice {
     //index: usize,
-    pub message: Message,
+    pub message: CustomMessage,
     //finish_reason: String
 }
 #[derive(Deserialize, Debug)]
@@ -72,7 +75,7 @@ pub struct CompletionResponse {
 #[derive(Serialize, Debug)]
 pub struct GPTTurboRequest {
     model: String,
-    messages: Vec<Message>,
+    messages: Vec<CustomMessage>,
     temperature: f32
 }
 #[derive(Serialize, Debug)]
@@ -98,18 +101,18 @@ pub enum GPTError {
     UnparseableOpenAIResponse,
     Null
 }
-pub fn message_context_to_stringified_request(character: &Character, game_state: &VisualNovelState, event: &GPTSayEvent) -> Result<String, GPTError>{
+pub fn message_context_to_stringified_request(character: &Character, game_state: &VisualNovelState, message: &GPTSayMessage) -> Result<String, GPTError>{
     // Build the prompt for the request
-    let mut messages = Vec::<Message>::new();
-    messages.push(Message { 
+    let mut messages = Vec::<CustomMessage>::new();
+    messages.push(CustomMessage {
         role: String::from("system"),
         content: character.description.clone(),
     });
-    messages.push(Message { 
+    messages.push(CustomMessage {
         role: String::from("system"),
-        content: format!("{}'s goal: `{}`. Your goal is NOT yet achieved.", character.name, event.goal.clone())
+        content: format!("{}'s goal: `{}`. Your goal is NOT yet achieved.", character.name, message.goal.clone())
     });
-    messages.push(Message { 
+    messages.push(CustomMessage {
         role: String::from("system"),
         content: format!("Generate two messages. Format: `[{}][{}]: blah blah blah etc`", character.name, character.emotions.join(" | "))
     });
@@ -125,8 +128,8 @@ pub fn message_context_to_stringified_request(character: &Character, game_state:
     // Serialize the request
     return serde_json::to_string(&request)
         .map_err(|_| GPTError::RequestBuilderError);
-
 }
+
 pub fn query_gpt_turbo(request_string: &String, api_key: &String) -> Result<String, GPTError> {
     let mut result: Result<String, GPTError> = Err(GPTError::Null);
     for attempt in 1..=5 {
@@ -162,11 +165,11 @@ pub fn query_gpt_turbo(request_string: &String, api_key: &String) -> Result<Stri
     }
     result
 }
-pub fn generate_chat_transitions(character: &Character, game_state: &VisualNovelState, event: &GPTSayEvent) -> Result<Vec<Transition>, GPTError> {
+pub fn generate_chat_transitions(character: &Character, game_state: &VisualNovelState, event_message: &GPTSayMessage) -> Result<Vec<Transition>, GPTError> {
     let mut ret = Vec::<Transition>::new();
 
     // Serialize the request
-    let serialized_request: String = message_context_to_stringified_request(character, game_state, event)?;
+    let serialized_request: String = message_context_to_stringified_request(character, game_state, event_message)?;
 
     // Make the request
     println!("[ Sending GPT request to OpenAI ]");
@@ -185,7 +188,7 @@ pub fn generate_chat_transitions(character: &Character, game_state: &VisualNovel
     // Matches [...][...]: ...
     let message_structure = Regex::new(r"\[(.+)\]\[(.+)\]: ([\S\s]+)").expect("Please re-write the message structure regex!");
 
-    /* 
+    /*
     Split the response by each message
         ([...][...]: ...)
 
@@ -202,7 +205,7 @@ pub fn generate_chat_transitions(character: &Character, game_state: &VisualNovel
 
     for message_group in all_messages_groups {
         println!("[ MESSAGE GROUP HEADER ]");
-        /* Splits the INDIVIDUAL message group by "\n" 
+        /* Splits the INDIVIDUAL message group by "\n"
             Example:
             [...][...]: blah blah blah
             blah blah blah
@@ -232,35 +235,35 @@ pub fn generate_chat_transitions(character: &Character, game_state: &VisualNovel
 
             Ok(response_unsplit)
         };
-        
+
         let responses_split: Vec<&str> = extract_message()
             .unwrap_or(message_group)
             .split("\n")
             .filter(|line| !line.is_empty())
             .collect();
-        
+
         // Update the emotion
         for message in responses_split {
             println!("[ NEW MESSAGE: {} ]", message);
-            ret.push(Transition::Say(String::from(event.name.clone()),String::from(message)));
+            ret.push(Transition::Say(String::from(event_message.name.clone()),String::from(message)));
         }
     }
     Ok(ret)
 }
-pub fn determine_goal_status(character: &Character, game_state: &VisualNovelState, event: &GPTSayEvent) -> Option<bool> {
+pub fn determine_goal_status(character: &Character, game_state: &VisualNovelState, message: &GPTSayMessage) -> Option<bool> {
     // Build the prompt for the request
     let prompt = format!("Decide whether {} achieved their goal of \"{}\". Give advice to the character on what to do, and reason for why the goal isn't completed in JSON form.
-    
+
     Conversation:
     {}
 
-    Response example: 
+    Response example:
     {{\n\t\"character\": \"{}\",\n\t\"reason\": \"reason why goal is or isnt completed\",\"advice\":\"advice for completing goal\" | null,\n\t\"goal_status\": \"NO\"\n}}
     Possible goal statuses: \"YES\", \"NO\"
-    
+
     Final Reponse:
     {{\n\t\"character\": \"{}\",
-    ", character.name, event.goal, game_state.past_messages.clone().iter().map(|item| item.content.clone()).collect::<String>(), character.name, character.name );
+    ", character.name, message.goal, game_state.past_messages.clone().iter().map(|item| item.content.clone()).collect::<String>(), character.name, character.name );
     // Build the request object to be serialized
     let request = CompletionRequest {
         model: String::from("text-davinci-003"),
@@ -292,8 +295,8 @@ pub fn determine_goal_status(character: &Character, game_state: &VisualNovelStat
     }
     println!("[ Response: {} ]", response_message);
     // Extract the goal status from the response
-    let goal_response_object: GoalResponse = serde_json::from_str( 
-        &(String::from("{") + &response_message.replace(|c: char| if c == '\n' { true } else { c.is_whitespace() }, "")) 
+    let goal_response_object: GoalResponse = serde_json::from_str(
+        &(String::from("{") + &response_message.replace(|c: char| if c == '\n' { true } else { c.is_whitespace() }, ""))
     )
         .ok()?;
     Some(goal_response_object.goal_status == "YES")

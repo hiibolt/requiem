@@ -2,4 +2,4 @@ pub mod controller;
 
 pub use controller::Character;
 pub use controller::CharacterController;
-pub use controller::EmotionChangeEvent;
+pub use controller::EmotionChangeMessage;

@@ -10,6 +10,7 @@ use crate::chat::*;
 use crate::intelligence::*;
 use crate::compiler::*;
 
+use bevy::asset::AssetLoader;
 use bevy::{
     prelude::*,
     window::*,
@@ -17,7 +18,41 @@ use bevy::{
 };
 use std::vec::IntoIter;
 use std::collections::HashMap;
+use thiserror::Error;
 
+#[derive(Debug, Error)]
+pub enum CharacterJsonError {
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("JSON parse error: {0}")]
+    Serde(#[from] serde_json::Error),
+}
+
+#[derive(Default)]
+pub struct CharacterJsonLoader;
+impl AssetLoader for CharacterJsonLoader {
+    type Asset = Character;
+    type Settings = ();
+    type Error = CharacterJsonError;
+
+    fn load(
+            &self,
+            reader: &mut dyn bevy::asset::io::Reader,
+            _settings: &Self::Settings,
+            _load_context: &mut bevy::asset::LoadContext,
+        ) -> impl bevy::tasks::ConditionalSendFuture<Output = std::result::Result<Self::Asset, Self::Error>> {
+        Box::pin(async move {
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await?;
+            let parsed: Character = serde_json::from_slice(&bytes)?;
+            Ok(parsed)
+        })
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["json"]
+    }
+}
 
 #[derive(Component)]
 struct Object {
@@ -36,37 +71,43 @@ pub struct VisualNovelState {
     all_script_transitions: HashMap<String, Vec<Transition>>,
     transitions_iter: IntoIter<Transition>,
     current_scene_id: String,
-    
+
     extra_transitions: Vec<Transition>,
 
-    past_messages: Vec<Message>,
+    past_messages: Vec<CustomMessage>,
 
     blocking: bool,
 }
 
 fn main() {
+    if std::env::var("OPENAI_API_KEY").is_err() {
+        panic!("Environment variable OPENAI_API_KEY needs to be set!");
+    }
+
     App::new()
         .add_plugins(DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: String::from("Ettethread - Requiem"),
-                    resolution: (1280., 800.).into(),
+                    resolution: (1280, 800).into(),
                     present_mode: PresentMode::AutoVsync,
-                    // Tells wasm to resize the window according to the available canvas
-                    fit_canvas_to_parent: true,
                     // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
                     prevent_default_event_handling: false,
                     ..default()
                 }),
                 ..default()
                 })
-        ) 
+        )
         .init_resource::<VisualNovelState>()
-        .add_startup_system(setup)
-        .add_plugin(Compiler)
-        .add_plugin(BackgroundController)
-        .add_plugin(CharacterController)
-        .add_plugin(ChatController)
+        .init_asset::<Character>()
+        .init_asset_loader::<CharacterJsonLoader>()
+        .add_systems(Startup, setup)
+        .add_plugins((
+            Compiler,
+            BackgroundController,
+            CharacterController,
+            ChatController,
+        ))
         .run();
 }
 
@@ -77,9 +118,9 @@ fn setup(
     // These are constants which would normally
     //  be filled in by the player
     game_state.playername = String::from("Bolt");
-    game_state.api_key = std::env::var("OPENAI_API_KEY").expect("Environment variable OPENAI_API_KEY needs to be set!");
+    game_state.api_key = std::env::var("OPENAI_API_KEY").unwrap();
 
     // Create our primary camera (which is
     //  necessary even for 2D games)
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2d::default());
 }
