@@ -80,7 +80,7 @@ pub struct VisualNovelState {
 }
 
 fn main() {
-    if let Err(_) = std::env::var("OPENAI_API_KEY") {
+    if std::env::var("OPENAI_API_KEY").is_err() {
         panic!("Environment variable OPENAI_API_KEY needs to be set!");
     }
 
