@@ -518,13 +518,13 @@ fn update_chatbox(
     original_string.truncate(length as usize);
     message_text.0 = original_string;
 
-    if window.is_empty() {
-        eprintln!("Error querying for window");
-        return;
-    }
-
-    let window = window.single().unwrap();
-
+    let window = match window.get_single() {
+        Ok(window) => window,
+        Err(_) => {
+            eprintln!("Error querying for window");
+            return;
+        }
+    };
     if let Some(position) = window.cursor_position() {
         let resolution = &window.resolution;
         let textbox_bounds: [f32; 4] = [
