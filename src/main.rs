@@ -9,6 +9,7 @@ use crate::chat::*;
 use crate::compiler::*;
 
 use bevy::asset::AssetLoader;
+use bevy::ecs::error::ErrorContext;
 use bevy::{
     prelude::*,
     window::*,
@@ -76,6 +77,11 @@ pub struct VisualNovelState {
     blocking: bool,
 }
 
+fn error_handler ( err: BevyError, ctx: ErrorContext ) {
+    println!("Error: {err:?}\nContext: {ctx:?}");
+
+    panic!("Stopping due to error.");
+}
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins
@@ -94,6 +100,7 @@ fn main() {
         .init_resource::<VisualNovelState>()
         .init_asset::<Character>()
         .init_asset_loader::<CharacterJsonLoader>()
+        .set_error_handler(error_handler)
         .add_systems(Startup, setup)
         .add_plugins((
             Compiler,

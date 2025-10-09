@@ -1,0 +1,5 @@
+SCENE 1
+    { log "This is an example of a code block" }
+    MC: "Hi Nayu!"
+    Nayu: (happy) "Hi!"
+CURTAIN

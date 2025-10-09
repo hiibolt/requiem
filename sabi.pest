@@ -1,32 +1,44 @@
-// Comments use {..} syntax with non-greedy matching
-COMMENT = _{ "{" ~ (!"}" ~ ANY)* ~ "}" }
+WHITESPACE = _{ " " | "\t" | NEWLINE }
 
 // The capsule for the program and the 
 //  enum for its statements
-program = { SOI ~ statement+ ~ EOI }
+act = { SOI ~ scene+ ~ EOI }
+scene = { "SCENE " ~ scene_num ~ statement* ~ "CURTAIN" }
+
+// There are three types of statements
+//  1. Code statements for logic, etc
+//  2. Stage directions for changing scenes, backgrounds, sounds, etc
+//  3. Dialogue for characters to say things
 statement = _{
-    feels |
-    log |
-    says
+    code |
+    stage |
+    dialogue
     }
 
-// Makes a character or the MC feel something
-feels = { character_identifier ~ "feels" ~ emotion_name ~ semicolon }
+// Stage directions
+stage = { "(" ~ stage_command ~ ")" }
+    stage_command = _{ background_change }
+    background_change = { "Background changes to " ~ string }
+
+// Code statements
+code = { "{" ~ code_statement ~ "}" }
+    code_statement = _{ log }
+    // Writes a message to the console
+    log = { "log " ~ expr+ }
 
 // Makes a character or the MC say something
-says = { character_identifier ~ ": " ~ expr ~ semicolon }
-
-// Writes a message to the console
-log = { "log" ~ expr ~ semicolon }
+dialogue = { character_identifier ~ ": " ~ emotion_change? ~ expr }
+    emotion_change = { "(" ~ emotion_name ~ ")" }
 
 // Expressions
 expr = { term ~ (infix_op ~ term)* }
-term = _{ 
-    number | 
-    string | 
-    "(" ~ expr ~ ")" 
-    }
-infix_op = _{ "+" | "-" | "*" | "/" }
+    term = _{ 
+        number | 
+        string | 
+        "(" ~ expr ~ ")" 
+        }
+    infix_op = _{ add }
+    add = { "+" }
 
 // General types
 character_identifier = { 
@@ -38,6 +50,6 @@ emotion_name = @{ ASCII_ALPHA+ }
 mc_identifier = { "MC" } 
 
 // Intrinsic types
-number     = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
-string     = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
-semicolon  = { ";" }
+scene_num = @{ ASCII_DIGIT+ }
+number    = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+string    = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
