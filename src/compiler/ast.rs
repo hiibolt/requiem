@@ -17,6 +17,7 @@ lazy_static::lazy_static! {
 
 // Trait for evaluating expressions by flattening them
 pub trait Evaluate {
+    fn evaluate_into_string(&self) -> Result<String>;
     fn evaluate(&self) -> Result<Expr>;
 }
 
@@ -28,6 +29,12 @@ pub enum Expr {
 }
 
 impl Evaluate for Expr {
+    fn evaluate_into_string(&self) -> Result<String> {
+        let evaluated = self.evaluate()
+            .context("Failed to evaluate expression")?;
+        expr_to_string(&evaluated)
+            .context("Failed to convert evaluated expression to string")
+    }
     fn evaluate(&self) -> Result<Expr> {
         match self {
             Expr::String(_) | Expr::Number(_) => Ok(self.clone()),
@@ -60,21 +67,6 @@ impl Evaluate for Expr {
     }
 }
 
-impl Evaluate for CodeStatement {
-    fn evaluate(&self) -> Result<Expr> {
-        match self {
-            CodeStatement::Log(exprs) => {
-                let mut parts = Vec::new();
-                for expr in exprs {
-                    let evaluated = expr.evaluate()?;
-                    parts.push(expr_to_string(&evaluated)?);
-                }
-                Ok(Expr::String(parts.join(" ")))
-            }
-        }
-    }
-}
-
 // Helper function to convert Expr to String
 pub fn expr_to_string(expr: &Expr) -> Result<String> {
     match expr {
@@ -87,22 +79,6 @@ pub fn expr_to_string(expr: &Expr) -> Result<String> {
     }
 }
 
-// Shorthand function to evaluate an expression and convert to string
-pub fn evaluate_into_string(expr: &Expr) -> Result<String> {
-    let evaluated = expr.evaluate()
-        .context("Failed to evaluate expression")?;
-    expr_to_string(&evaluated)
-        .context("Failed to convert evaluated expression to string")
-}
-
-// Shorthand function for code statements to evaluate into string
-pub fn evaluate_code_into_string(code_stmt: &CodeStatement) -> Result<String> {
-    let evaluated = code_stmt.evaluate()
-        .context("Failed to evaluate code statement")?;
-    expr_to_string(&evaluated)
-        .context("Failed to convert evaluated code statement to string")
-}
-
 #[derive(Debug, Clone)]
 pub enum CodeStatement {
     Log(Vec<Expr>)
@@ -111,14 +87,14 @@ pub enum CodeStatement {
 #[derive(Debug, Clone)]
 pub enum StageCommand {
     BackgroundChange(Box<Expr>),
-    GUIChange { id: Box<Expr>, sprite: Box<Expr> }
+    GUIChange { id: Box<Expr>, sprite: Box<Expr> },
+    EmotionChange { character: String, emotion: String }
 }
 
 #[derive(Debug, Clone)]
 pub struct Dialogue {
     pub character: String,
-    pub emotion: Option<String>,
-    pub dialogue: String
+    pub dialogue: Expr
 }
 
 #[derive(Debug, Clone)]
@@ -165,7 +141,7 @@ pub fn build_expression(pair: pest::iterators::Pair<Rule>) -> Result<Expr> {
 }
 
 pub fn build_stage_command(pair: Pair<Rule>) -> Result<Statement> {
-    ensure!(pair.as_rule() == Rule::stage, 
+    ensure!(pair.as_rule() == Rule::stage_command, 
         "Expected stage rule, found {:?}", pair.as_rule());
     
     let command_pair = pair.into_inner().next()
@@ -201,6 +177,23 @@ pub fn build_stage_command(pair: Pair<Rule>) -> Result<Statement> {
                 sprite: Box::new(sprite_expr) 
             }
         },
+        Rule::emotion_change => {
+            let mut inner = command_pair.into_inner();
+            let character_name_pair = inner.next()
+                .context("Emotion change missing character name")?;
+            let emotion_name_pair = inner.next()
+                .context("Emotion change missing emotion name")?;
+            
+            ensure!(character_name_pair.as_rule() == Rule::character_name, 
+                "Expected character name, found {:?}", character_name_pair.as_rule());
+            ensure!(emotion_name_pair.as_rule() == Rule::emotion_name, 
+                "Expected emotion name, found {:?}", emotion_name_pair.as_rule());
+            
+            StageCommand::EmotionChange { 
+                character: character_name_pair.as_str().to_owned(), 
+                emotion: emotion_name_pair.as_str().to_owned() 
+            }
+        },
         other => bail!("Unexpected rule in stage command: {:?}", other)
     };
     
@@ -230,7 +223,7 @@ pub fn build_code_statement(code_pair: Pair<Rule>) -> Result<Statement> {
     Ok(Statement::Code(result))
 }
 
-pub fn build_dialogue(pair: Pair<Rule>) -> Result<Statement> {
+pub fn build_dialogue(pair: Pair<Rule>) -> Result<Vec<Statement>> {
     ensure!(pair.as_rule() == Rule::dialogue, 
         "Expected dialogue, found {:?}", pair.as_rule());
     
@@ -241,8 +234,8 @@ pub fn build_dialogue(pair: Pair<Rule>) -> Result<Statement> {
         .as_str()
         .to_owned();
     
-    let emotion = match inner_rules.peek() {
-        Some(n) if n.as_rule() == Rule::emotion_change => {
+    let emotion_statement = match inner_rules.peek() {
+        Some(n) if n.as_rule() == Rule::dialogue_emotion_change => {
             let emotion_pair = inner_rules.next().unwrap();
             let emotion_name_pair = emotion_pair.into_inner().next()
                 .context("Emotion change missing emotion name")?;
@@ -250,28 +243,59 @@ pub fn build_dialogue(pair: Pair<Rule>) -> Result<Statement> {
             ensure!(emotion_name_pair.as_rule() == Rule::emotion_name, 
                 "Expected emotion name, found {:?}", emotion_name_pair.as_rule());
             
-            Some(emotion_name_pair.as_str().to_owned())
+            Some(Statement::Stage(StageCommand::EmotionChange { 
+                character: character.clone(), 
+                emotion: emotion_name_pair.as_str().to_owned() 
+            }))
         },
         _ => None
     };
+
+    let initial_dialogue_statement = {
+        let dialogue_text_pair = inner_rules.next()
+            .context("Dialogue missing dialogue text")?;
+        ensure!(dialogue_text_pair.as_rule() == Rule::expr, 
+            "Expected dialogue text, found {:?}", dialogue_text_pair.as_rule());
+        
+        let dialogue = build_expression(dialogue_text_pair)
+            .context("Failed to build expression for dialogue text")?;
+        
+        Statement::Dialogue(Dialogue {
+            character: character.clone(),
+            dialogue
+        })
+    };
+
+    let statements = {
+        let mut statements = vec!(initial_dialogue_statement);
+        if let Some(emotion_stmt) = emotion_statement {
+            statements.insert(0, emotion_stmt);
+        }
+
+        while let Some(dialogue_text_pair) = inner_rules.next() {
+            match dialogue_text_pair.as_rule() {
+                Rule::expr => {
+                    let dialogue = build_expression(dialogue_text_pair)
+                        .context("Failed to build expression for dialogue text")?;
+
+                    statements.push(Statement::Dialogue(Dialogue {
+                        character: character.clone(),
+                        dialogue
+                    }));
+                },
+                Rule::stage_command => {
+                    let stage_stmt = build_stage_command(dialogue_text_pair)
+                        .context("Failed to build stage command inside dialogue")?;
+                    statements.push(stage_stmt);
+                },
+                other => bail!("Unexpected rule in dialogue text: {:?}", other)
+            }
+        }
+
+        statements
+    };
     
-    let dialogue_expr_pair = inner_rules.next()
-        .context("Dialogue missing dialogue expression")?;
-    
-    let dialogue_expr = build_expression(dialogue_expr_pair)
-        .context("Failed to build dialogue expression")?;
-    
-    let evaluated_expr = dialogue_expr.evaluate()
-        .context("Failed to evaluate dialogue expression")?;
-    
-    let dialogue = expr_to_string(&evaluated_expr)
-        .context("Failed to convert dialogue expression to string")?;
-    
-    Ok(Statement::Dialogue(Dialogue {
-        character,
-        emotion,
-        dialogue
-    }))
+    Ok(statements)
 }
 
 pub fn build_scenes(pair: Pair<Rule>) -> Result<Vec<Scene>> {
@@ -292,10 +316,15 @@ pub fn build_scenes(pair: Pair<Rule>) -> Result<Vec<Scene>> {
                     let stmt = match statement_pair.as_rule() {
                         Rule::code => build_code_statement(statement_pair)
                             .context("Failed to build code statement")?,
-                        Rule::stage => build_stage_command(statement_pair)
+                        Rule::stage_command => build_stage_command(statement_pair)
                             .context("Failed to build stage command")?,
-                        Rule::dialogue => build_dialogue(statement_pair)
-                            .context("Failed to build dialogue")?,
+                        Rule::dialogue => {
+                            let mut inner_statements = build_dialogue(statement_pair)
+                                .context("Failed to build dialogue")?;
+                            statements.extend(inner_statements.drain(..));
+
+                            continue;
+                        },
                         other => bail!("Unexpected rule in scene: {:?}", other),
                     };
                     statements.push(stmt);

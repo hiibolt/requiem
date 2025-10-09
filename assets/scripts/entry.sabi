@@ -1,7 +1,7 @@
 SCENE 1
-    [GUI textbox changes to "TEXTBOX_NASTYA"]
-    [Background changes to "main_classroom_noon"]
+    (GUI textbox changes to "TEXTBOX_NASTYA")
+    (Background changes to "main_classroom_noon")
     { log "This is an example of a code block" }
     MC: "Hi Nayu!"
-    Nayu: (neutral) "Hi!"
+    Nayu: (neutral) "Hi!" (Nayu looks sad) "I'm not feeling so great right now..."
 CURTAIN

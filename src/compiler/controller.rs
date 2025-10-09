@@ -1,5 +1,5 @@
 use crate::{BackgroundChangeMessage, CharacterSayMessage, EmotionChangeMessage, GUIChangeMessage, VisualNovelState};
-use crate::compiler::ast::{self, SabiParser, Rule, build_scenes, evaluate_into_string, evaluate_code_into_string};
+use crate::compiler::ast::{self, build_scenes, Evaluate, Rule, SabiParser};
 use std::collections::HashMap;
 use bevy::prelude::*;
 use anyhow::{Context, Result};
@@ -113,33 +113,46 @@ fn scenes_to_transitions(scenes: Vec<ast::Scene>) -> Result<HashMap<String, Vec<
         for statement in scene.statements {
             match statement {
                 ast::Statement::Code(code_stmt) => {
-                    let log_message = evaluate_code_into_string(&code_stmt)
-                        .context("Failed to evaluate code statement")?;
-                    transitions.push(Transition::Log(log_message));
+                    match code_stmt {
+                        ast::CodeStatement::Log(exprs) => {
+                            let log_message = {
+                                let mut body = String::new();
+                                for expr in exprs {
+                                    let evaluated = expr.evaluate_into_string()
+                                        .context("Failed to evaluate log expression")?;
+
+                                    body.push_str(&evaluated);
+                                }
+                                body
+                            };
+                            
+                            transitions.push(Transition::Log(log_message));
+                        }
+                    }
                 },
                 ast::Statement::Stage(stage_cmd) => {
                     match stage_cmd {
                         ast::StageCommand::BackgroundChange(expr) => {
-                            let background_id = evaluate_into_string(&expr)
+                            let background_id = expr.evaluate_into_string()
                                 .context("Failed to evaluate background change expression")?;
                             transitions.push(Transition::SetBackground(background_id));
                         },
                         ast::StageCommand::GUIChange { id, sprite } => {
-                            let gui_id = evaluate_into_string(&id)
+                            let gui_id = id.evaluate_into_string()
                                 .context("Failed to evaluate GUI ID expression")?;
-                            let sprite_id = evaluate_into_string(&sprite)
+                            let sprite_id = sprite.evaluate_into_string()
                                 .context("Failed to evaluate GUI sprite expression")?;
                             transitions.push(Transition::SetGUI(gui_id, sprite_id));
+                        },
+                        ast::StageCommand::EmotionChange { character, emotion } => {
+                            transitions.push(Transition::SetEmotion(character, emotion.to_uppercase()));
                         }
                     }
                 },
                 ast::Statement::Dialogue(dialogue) => {
-                    // Set emotion if specified
-                    if let Some(emotion) = dialogue.emotion {
-                        transitions.push(Transition::SetEmotion(dialogue.character.clone(), emotion.to_uppercase()));
-                    }
-                    // Add the dialogue
-                    transitions.push(Transition::Say(dialogue.character, dialogue.dialogue));
+                    let dialogue_text = dialogue.dialogue.evaluate_into_string()
+                        .context("Failed to evaluate dialogue expression")?;
+                    transitions.push(Transition::Say(dialogue.character, dialogue_text));
                 }
             }
         }

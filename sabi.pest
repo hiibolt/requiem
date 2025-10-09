@@ -11,17 +11,19 @@ scene = { "SCENE " ~ scene_num ~ statement* ~ "CURTAIN" }
 //  3. Dialogue for characters to say things
 statement = _{
     code |
-    stage |
+    stage_command |
     dialogue
     }
 
 // Stage directions
-stage = { "[" ~ stage_command ~ "]" }
-    stage_command = _{ 
+stage_command = { "(" ~ stage_command_type ~ ")" }
+    stage_command_type = _{ 
         gui_change |
+        emotion_change |
         background_change }
     gui_change = { "GUI" ~ gui_element ~ "changes" ~ "to" ~ expr }
     background_change = { "Background" ~ "changes" ~ "to" ~ expr }
+    emotion_change = { character_name ~ "looks" ~ emotion_name }
     gui_element = { "textbox" | "namebox" }
 
 // Code statements
@@ -31,8 +33,8 @@ code = { "{" ~ code_statement ~ "}" }
     log = { "log " ~ expr+ }
 
 // Makes a character or the MC say something
-dialogue = { character_identifier ~ ": " ~ emotion_change? ~ expr }
-    emotion_change = { "(" ~ emotion_name ~ ")" }
+dialogue = { character_identifier ~ ": " ~ dialogue_emotion_change? ~ expr ~ (expr | stage_command)* }
+    dialogue_emotion_change = { "(" ~ emotion_name ~ ")" }
 
 // Expressions
 expr = { term ~ (infix_op ~ term)* }
