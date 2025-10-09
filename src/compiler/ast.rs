@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use pest::{iterators::Pair, pratt_parser::PrattParser};
 use pest_derive::Parser;
 use anyhow::{bail, ensure, Context, Result};
@@ -79,15 +81,18 @@ pub fn expr_to_string(expr: &Expr) -> Result<String> {
     }
 }
 
+pub type Acts = HashMap<String, Box<Act>>;
+pub type Act = HashMap<String, Box<Scene>>;
+
 #[derive(Debug, Clone)]
 pub enum CodeStatement {
-    Log(Vec<Expr>)
+    Log { exprs: Vec<Expr> }
 }
 
 #[derive(Debug, Clone)]
 pub enum StageCommand {
-    BackgroundChange(Box<Expr>),
-    GUIChange { id: Box<Expr>, sprite: Box<Expr> },
+    BackgroundChange { background_expr: Box<Expr> },
+    GUIChange { id_expr: Box<Expr>, sprite_expr: Box<Expr> },
     EmotionChange { character: String, emotion: String }
 }
 
@@ -104,9 +109,9 @@ pub enum Statement {
     Dialogue(Dialogue)
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Default)]
 pub struct Scene {
-    pub id: String,
     pub statements: Vec<Statement>
 }
 
@@ -153,7 +158,7 @@ pub fn build_stage_command(pair: Pair<Rule>) -> Result<Statement> {
                 .context("Background change missing expression")?;
             let expr = build_expression(expr_pair)
                 .context("Failed to build expression for background change")?;
-            StageCommand::BackgroundChange(Box::new(expr))
+            StageCommand::BackgroundChange { background_expr: Box::new(expr) }
         },
         Rule::gui_change => {
             let mut inner = command_pair.into_inner();
@@ -173,8 +178,8 @@ pub fn build_stage_command(pair: Pair<Rule>) -> Result<Statement> {
                 .context("Failed to build sprite expression for GUI change")?;
             
             StageCommand::GUIChange { 
-                id: Box::new(Expr::String(gui_id.to_string())), 
-                sprite: Box::new(sprite_expr) 
+                id_expr: Box::new(Expr::String(gui_id.to_string())), 
+                sprite_expr: Box::new(sprite_expr) 
             }
         },
         Rule::emotion_change => {
@@ -215,7 +220,7 @@ pub fn build_code_statement(code_pair: Pair<Rule>) -> Result<Statement> {
                     .context("Failed to build expression for log statement")?;
                 exprs.push(expr);
             }
-            CodeStatement::Log(exprs)
+            CodeStatement::Log { exprs }
         },
         other => bail!("Unexpected rule in code statement: {:?}", other)
     };
@@ -298,8 +303,8 @@ pub fn build_dialogue(pair: Pair<Rule>) -> Result<Vec<Statement>> {
     Ok(statements)
 }
 
-pub fn build_scenes(pair: Pair<Rule>) -> Result<Vec<Scene>> {
-    let mut scenes = Vec::new();
+pub fn build_scenes(pair: Pair<Rule>) -> Result<Act> {
+    let mut act: Act = Act::new();
     
     for scene_pair in pair.into_inner() {
         match scene_pair.as_rule() {
@@ -330,15 +335,12 @@ pub fn build_scenes(pair: Pair<Rule>) -> Result<Vec<Scene>> {
                     statements.push(stmt);
                 }
                 
-                scenes.push(Scene {
-                    id: scene_id,
-                    statements
-                });
+                ensure!(act.insert(scene_id.clone(), Box::new(Scene { statements })).is_none(), "Duplicate scene ID '{}'", scene_id);
             },
             Rule::EOI => continue,
             other => bail!("Unexpected rule when parsing scenes: {:?}", other),
         }
     }
     
-    Ok(scenes)
+    Ok(act)
 }

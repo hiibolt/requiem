@@ -3,8 +3,9 @@ WHITESPACE = _{ " " | "\t" | NEWLINE }
 // The capsule for the program and the 
 //  enum for its statements
 act = { SOI ~ scene+ ~ EOI }
-scene = { "SCENE " ~ scene_num ~ statement* ~ "CURTAIN" }
-
+scene = { "SCENE " ~ scene_name ~ statement* ~ "CURTAIN" }
+    scene_name = @{ ASCII_ALPHANUMERIC+ }
+    
 // There are three types of statements
 //  1. Code statements for logic, etc
 //  2. Stage directions for changing scenes, backgrounds, sounds, etc
@@ -56,6 +57,5 @@ emotion_name = @{ ASCII_ALPHA+ }
 mc_identifier = { "MC" } 
 
 // Intrinsic types
-scene_num = @{ ASCII_DIGIT+ }
 number    = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 string    = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }

@@ -1,6 +1,0 @@
-log "hi"
-log "oh, what's up!"
-psay msg=`Hi Nayu!"
-psay msg=``
-log msg=`oh, what's up!`
-set type=`background` background=`main_classroom_day`

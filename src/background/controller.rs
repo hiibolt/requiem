@@ -67,7 +67,6 @@ fn setup(
                 /* Background Setup */
                 commands.spawn((
                     Object {
-                        r#type: String::from("background"),
                         id: String::from("_primary")
                     },
                     Background {

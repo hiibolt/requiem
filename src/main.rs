@@ -7,6 +7,7 @@ use crate::background::*;
 use crate::character::*;
 use crate::chat::*;
 use crate::compiler::*;
+use crate::compiler::ast;
 
 use bevy::asset::AssetLoader;
 use bevy::ecs::error::ErrorContext;
@@ -55,7 +56,6 @@ impl AssetLoader for CharacterJsonLoader {
 
 #[derive(Component)]
 struct Object {
-    r#type: String,
     id: String
 }
 
@@ -64,16 +64,14 @@ pub struct VisualNovelState {
     // Player-designated constants
     playername: String,
 
+    // Assets
     gui_sprites: HashMap<String, Handle<Image>>,
 
-    all_script_transitions: HashMap<String, Vec<Transition>>,
-    transitions_iter: IntoIter<Transition>,
-    current_scene_id: String,
-
-    extra_transitions: Vec<Transition>,
-
-    past_messages: Vec<CustomMessage>,
-
+    // Game state
+    acts: ast::Acts,
+    act: Box<ast::Act>,
+    scene: Box<ast::Scene>,
+    statements: IntoIter<ast::Statement>,
     blocking: bool,
 }
 

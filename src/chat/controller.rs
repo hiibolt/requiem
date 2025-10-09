@@ -1,9 +1,8 @@
-use crate::{compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage}, Character, Object, VisualNovelState};
+use crate::{compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage}, Object, VisualNovelState};
 
 use std::collections::HashMap;
 
 use bevy::{asset::{LoadState, LoadedFolder}, color::palettes::css::RED, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, window::PrimaryWindow};
-use serde::{Serialize, Deserialize};
 
 /* Messages */
 #[derive(Message)]
@@ -15,13 +14,6 @@ pub struct CharacterSayMessage {
 pub struct GUIChangeMessage {
     pub gui_id: String,
     pub sprite_id: String
-}
-
-/* Custom Types */
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CustomMessage {
-    pub role: String,
-    pub content: String
 }
 
 /* States */
@@ -178,7 +170,6 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
     // Spawn Backplate + Nameplate
     commands.spawn((
         Object {
-            r#type: String::from("gui"),
             id: String::from("_textbox_background")
         },
         Visibility::Hidden,
@@ -188,7 +179,6 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
     .with_children(|parent| {
         parent.spawn((
             Object {
-                r#type: String::from("gui"),
                 id: String::from("_namebox_background")
             },
             Visibility::Inherited,
@@ -198,7 +188,6 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
         parent.spawn(
             TextBundle::new(
                 Object {
-                    r#type: String::from("gui"),
                     id: String::from("_name_text")
                 },
                 "UNFILLED"
@@ -214,7 +203,6 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
         parent.spawn(
             TextBundle::new(
                 Object {
-                    r#type: String::from("gui"),
                     id: String::from("_message_text")
                 },
                 "UNFILLED"
@@ -232,7 +220,6 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
     commands.spawn(
         TextBundle::new(
             Object {
-                r#type: String::from("gui"),
                 id: String::from("_info_text")
             },
             "",
@@ -255,7 +242,6 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
 }
 fn update_chatbox(
     mut event_message: MessageReader<CharacterSayMessage>,
-    character_query: Query<&Character>,
     mut visibility_query: Query<(&mut Visibility, &Object)>,
     mut text_object_query: Query<(&mut Text2d, &mut GUIScrollText, &Object)>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
@@ -314,26 +300,7 @@ fn update_chatbox(
         let name = if ev.name == "[_PLAYERNAME_]" { game_state.playername.clone() } else { ev.name.clone() };
         name_text.0 = name;
 
-        // Update the message text and log it as a Message
-        let role = if ev.name == "[_PLAYERNAME_]" { String::from("user") } else { String::from("assistant") };
-        let mut name = format!("[{}]", game_state.playername.clone());
-        let mut emotion = String::from("");
-        for character in character_query.iter() {
-            let emotion_str = match &character.emotion {
-                Some(emotion) => emotion,
-                None => continue
-            };
-            if character.name == ev.name {
-                name = format!("[{}]", character.name);
-                emotion = format!("[{}]", emotion_str);
-            }
-        }
-
         println!("MESSAGE {}", ev.message);
-        game_state.past_messages.push(CustomMessage {
-            role,
-            content: format!("{}{}: {}", name, emotion, ev.message.clone()),
-        });
 
         message_scroll_text_obj.message = ev.message.clone();
     }
