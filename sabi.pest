@@ -20,11 +20,9 @@ stage = { "[" ~ stage_command ~ "]" }
     stage_command = _{ 
         gui_change |
         background_change }
-    gui_change = { "GUI " ~ gui_element ~ " changes to " ~ expr }
-    background_change = { "Background changes to " ~ expr }
-    gui_element = { 
-        "textbox" |
-        "namebox"}
+    gui_change = { "GUI" ~ gui_element ~ "changes" ~ "to" ~ expr }
+    background_change = { "Background" ~ "changes" ~ "to" ~ expr }
+    gui_element = { "textbox" | "namebox" }
 
 // Code statements
 code = { "{" ~ code_statement ~ "}" }

@@ -164,11 +164,11 @@ pub fn build_expression(pair: pest::iterators::Pair<Rule>) -> Result<Expr> {
         .context("Failed to parse expression")
 }
 
-pub fn build_stage_command(stage_pair: Pair<Rule>) -> Result<Statement> {
-    ensure!(stage_pair.as_rule() == Rule::stage, 
-        "Expected stage rule, found {:?}", stage_pair.as_rule());
+pub fn build_stage_command(pair: Pair<Rule>) -> Result<Statement> {
+    ensure!(pair.as_rule() == Rule::stage, 
+        "Expected stage rule, found {:?}", pair.as_rule());
     
-    let command_pair = stage_pair.into_inner().next()
+    let command_pair = pair.into_inner().next()
         .context("Stage command missing inner command")?;
     
     let result = match command_pair.as_rule() {
@@ -181,19 +181,24 @@ pub fn build_stage_command(stage_pair: Pair<Rule>) -> Result<Statement> {
         },
         Rule::gui_change => {
             let mut inner = command_pair.into_inner();
-            let id_expr = inner.next()
-                .context("GUI change missing ID expression")?;
-            let sprite_expr = inner.next()
+            let gui_element_pair = inner.next()
+                .context("GUI change missing GUI element")?;
+            let sprite_expr_pair = inner.next()
                 .context("GUI change missing sprite expression")?;
             
-            let id = build_expression(id_expr)
-                .context("Failed to build ID expression for GUI change")?;
-            let sprite = build_expression(sprite_expr)
+            // Convert gui_element to the appropriate ID
+            let gui_id = match gui_element_pair.as_str() {
+                "textbox" => "_textbox_background",
+                "namebox" => "_namebox_background",
+                other => bail!("Unknown GUI element: {}", other)
+            };
+            
+            let sprite_expr = build_expression(sprite_expr_pair)
                 .context("Failed to build sprite expression for GUI change")?;
             
             StageCommand::GUIChange { 
-                id: Box::new(id), 
-                sprite: Box::new(sprite) 
+                id: Box::new(Expr::String(gui_id.to_string())), 
+                sprite: Box::new(sprite_expr) 
             }
         },
         other => bail!("Unexpected rule in stage command: {:?}", other)

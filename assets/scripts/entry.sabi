@@ -3,5 +3,5 @@ SCENE 1
     [Background changes to "main_classroom_noon"]
     { log "This is an example of a code block" }
     MC: "Hi Nayu!"
-    Nayu: (happy) "Hi!"
+    Nayu: (neutral) "Hi!"
 CURTAIN
