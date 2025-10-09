@@ -1,13 +1,11 @@
 mod background;
 mod character;
 mod chat;
-mod intelligence;
 mod compiler;
 
 use crate::background::*;
 use crate::character::*;
 use crate::chat::*;
-use crate::intelligence::*;
 use crate::compiler::*;
 
 use bevy::asset::AssetLoader;
@@ -64,7 +62,6 @@ struct Object {
 pub struct VisualNovelState {
     // Player-designated constants
     playername: String,
-    api_key: String,
 
     gui_sprites: HashMap<String, Handle<Image>>,
 
@@ -80,10 +77,6 @@ pub struct VisualNovelState {
 }
 
 fn main() {
-    if std::env::var("OPENAI_API_KEY").is_err() {
-        panic!("Environment variable OPENAI_API_KEY needs to be set!");
-    }
-
     App::new()
         .add_plugins(DefaultPlugins
             .set(WindowPlugin {
@@ -115,10 +108,8 @@ fn setup(
     mut commands: Commands,
     mut game_state: ResMut<VisualNovelState>,
 ) {
-    // These are constants which would normally
-    //  be filled in by the player
+    // This would normally be filled in by the player
     game_state.playername = String::from("Bolt");
-    game_state.api_key = std::env::var("OPENAI_API_KEY").unwrap();
 
     // Create our primary camera (which is
     //  necessary even for 2D games)

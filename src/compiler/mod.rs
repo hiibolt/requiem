@@ -64,15 +64,6 @@ pub fn compile_to_transitions(full_script_string: String) -> Vec<Transition> {
                         .to_owned();
                     Transition::Say(String::from("[_PLAYERNAME_]"), msg)
                 },
-                "gpt" => {
-                    let character_name = command_options.get("character")
-                        .expect("Missing 'character' option!")
-                        .to_owned();
-                    let character_goal = command_options.get("goal")
-                        .expect("Missing 'goal' option!")
-                        .to_owned();
-                    Transition::GPTSay(character_name, character_goal)
-                },
                 "set" => {
                     let type_of = command_options.get("type")
                         .expect("Missing 'type' option!")

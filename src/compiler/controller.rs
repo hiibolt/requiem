@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 
-use crate::{compile_to_transitions, BackgroundChangeMessage, CharacterSayMessage, EmotionChangeMessage, GPTGetMessage, GPTSayMessage, GUIChangeMessage, VisualNovelState};
+use crate::{compile_to_transitions, BackgroundChangeMessage, CharacterSayMessage, EmotionChangeMessage, GUIChangeMessage, VisualNovelState};
 
 
 /* States */
@@ -39,8 +39,6 @@ pub enum Transition {
     SetEmotion(String, String),
     SetBackground(String),
     SetGUI(String, String),
-    GPTGet(String, String),
-    GPTSay(String, String),
     Log(String),
     Scene(String),
     End
@@ -52,8 +50,6 @@ impl Transition {
         emotion_change_message: &mut MessageWriter<EmotionChangeMessage>,
         background_change_message: &mut MessageWriter<BackgroundChangeMessage>,
         gui_change_message: &mut MessageWriter<GUIChangeMessage>,
-        gpt_say_message: &mut MessageWriter<GPTSayMessage>,
-        gpt_get_message: &mut MessageWriter<GPTGetMessage>,
 
         game_state: &mut ResMut<VisualNovelState>,
     ) {
@@ -85,20 +81,6 @@ impl Transition {
                     gui_id: gui_id.to_owned(),
                     sprite_id: sprite_id.to_owned()
                 });
-            },
-            Transition::GPTSay(character_name, character_goal) => {
-                info!("Calling Transition::GPTSay");
-                game_state.blocking = true;
-                gpt_say_message.write(GPTSayMessage {
-                    name: character_name.to_owned(),
-                    goal: character_goal.to_owned(),
-                    advice: None
-                });
-            },
-            Transition::GPTGet(past_character, past_goal) => {
-                info!("Calling Transition::GPTGet");
-                game_state.blocking = true;
-                gpt_get_message.write(GPTGetMessage {past_character: past_character.clone(), past_goal: past_goal.clone()});
             },
             Transition::Log(msg) => println!("{msg}"),
             Transition::Scene(id) => {
@@ -198,8 +180,6 @@ fn run_transitions (
     mut emotion_change_message: MessageWriter<EmotionChangeMessage>,
     mut background_change_message: MessageWriter<BackgroundChangeMessage>,
     mut gui_change_message: MessageWriter<GUIChangeMessage>,
-    mut gpt_say_message: MessageWriter<GPTSayMessage>,
-    mut gpt_get_message: MessageWriter<GPTGetMessage>,
 
     mut game_state: ResMut<VisualNovelState>,
 ) {
@@ -214,8 +194,6 @@ fn run_transitions (
                     &mut emotion_change_message,
                     &mut background_change_message,
                     &mut gui_change_message,
-                    &mut gpt_say_message,
-                    &mut gpt_get_message,
 
                     &mut game_state,);
             }
@@ -230,8 +208,6 @@ fn run_transitions (
                     &mut emotion_change_message,
                     &mut background_change_message,
                     &mut gui_change_message,
-                    &mut gpt_say_message,
-                    &mut gpt_get_message,
 
                     &mut game_state,);
             },

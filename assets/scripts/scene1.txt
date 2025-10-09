@@ -1,7 +1,6 @@
-log msg=`hi`
-log msg=`oh, what's up!`
-psay msg=`Hi Nayu!`
-gpt character=`Nayu` goal=`Determine whether Bolt thinks he's a robot or conscious!`
-psay msg=`WHAT THE FUCK THIS BIH TALKING ABOUT :fire: :fire: (this means the character marked her goal completed)`
+log "hi"
+log "oh, what's up!"
+psay msg=`Hi Nayu!"
+psay msg=``
 log msg=`oh, what's up!`
 set type=`background` background=`main_classroom_day`

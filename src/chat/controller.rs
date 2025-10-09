@@ -1,8 +1,28 @@
-use crate::{compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage}, intelligence::*, Character, Object, Transition, VisualNovelState};
+use crate::{compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage}, Character, Object, VisualNovelState};
 
 use std::collections::HashMap;
 
-use bevy::{asset::{LoadState, LoadedFolder}, color::palettes::css::RED, input::keyboard::{Key, KeyboardInput}, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, window::PrimaryWindow};
+use bevy::{asset::{LoadState, LoadedFolder}, color::palettes::css::RED, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, window::PrimaryWindow};
+use serde::{Serialize, Deserialize};
+
+/* Messages */
+#[derive(Message)]
+pub struct CharacterSayMessage {
+    pub name: String,
+    pub message: String
+}
+#[derive(Message)]
+pub struct GUIChangeMessage {
+    pub gui_id: String,
+    pub sprite_id: String
+}
+
+/* Custom Types */
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CustomMessage {
+    pub role: String,
+    pub content: String
+}
 
 /* States */
 #[derive(States, Debug, Default, Clone, Copy, Hash, Eq, PartialEq)]
@@ -115,8 +135,6 @@ impl Plugin for ChatController {
             .init_state::<ChatControllerState>()
             .add_systems(OnEnter(ChatControllerState::Loading), import_gui_sprites)
             .add_systems(Update, setup.run_if(in_state(ChatControllerState::Loading)))
-            .add_message::<GPTSayMessage>()
-            .add_message::<GPTGetMessage>()
             .add_message::<CharacterSayMessage>()
             .add_message::<GUIChangeMessage>()
             .add_systems(Update, wait_trigger.run_if(in_state(ChatControllerState::Idle)))
@@ -270,14 +288,10 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
 }
 fn update_chatbox(
     mut event_message: MessageReader<CharacterSayMessage>,
-    mut gpt_message: MessageReader<GPTSayMessage>,
-    mut get_message: MessageReader<GPTGetMessage>,
     character_query: Query<&Character>,
     mut visibility_query: Query<(&mut Visibility, &Object)>,
     mut text_object_query: Query<(&mut Text2d, &mut GUIScrollText, &Object), Without<TypeBox>>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
-
-    mut input_messages: MessageReader<KeyboardInput>,
 
     mut game_state: ResMut<VisualNovelState>,
 
@@ -285,23 +299,8 @@ fn update_chatbox(
     window: Query<&Window, With<PrimaryWindow>>,
     buttons: Res<ButtonInput<MouseButton>>,
 ) {
-    /* QUICK FUNCTIONS */
-    // Returns a reference to a character object by its name
-    let find_character = |wanted_character_name: &String| -> Option<&Character> {
-        for character in character_query.iter() {
-            if character.name == *wanted_character_name {
-                return Some(character);
-            }
-        }
-        None
-    };
     /* QUICK USE VARIABLES */
-    // Reference to SPECIFICALLY the typing text display object.
-    // I'm well aware this is bad practice, but Bevy makes it really hard
-    // to avoid this without UNREAL levels of indent.
-    // I'm a JS dev who follows Torvald's rules about indentation, cry.
     let mut name_text_option: Option<&mut Text2d> = None;
-    let mut type_text_option: Option<&mut Text2d> = None;
     let mut info_text_option: Option<&mut Text2d> = None;
     let mut message_text_option: Option<&mut Text2d> = None;
     let mut message_scroll_text_obj_option: Option<&mut GUIScrollText> = None;
@@ -309,7 +308,6 @@ fn update_chatbox(
         match text_obj.id.as_str() {
             "_name_text" => name_text_option = Some(text_literal.into_inner()),
             "_info_text" => info_text_option = Some(text_literal.into_inner()),
-            "_type_text" => type_text_option = Some(text_literal.into_inner()),
             "_message_text" => {
                 message_text_option = Some(text_literal.into_inner());
                 message_scroll_text_obj_option = Some(scroll_text_obj.into_inner());
@@ -318,151 +316,22 @@ fn update_chatbox(
         }
     }
     let name_text = name_text_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'name_text'!");
-    let type_text = type_text_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'type_text'!");
     let info_text = info_text_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'info_text'!");
     let message_text = message_text_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'message_text'!");
     let message_scroll_text_obj = message_scroll_text_obj_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'message_text'!");
 
-    // Reference to SPECIFICALLY the typing text display object
-    let mut typebox_visibility_option: Option<&mut Visibility> = None;
     let mut textbox_visibility_option: Option<&mut Visibility> = None;
-    for (visibility_literal, typebox_obj) in visibility_query.iter_mut() {
-        match typebox_obj.id.as_str() {
-            "_typebox_background" => typebox_visibility_option = Some(visibility_literal.into_inner()),
+    for (visibility_literal, textbox_obj) in visibility_query.iter_mut() {
+        match textbox_obj.id.as_str() {
             "_textbox_background" => textbox_visibility_option = Some(visibility_literal.into_inner()),
             _ => {}
         }
     }
-    let typebox_visibility = typebox_visibility_option.expect("MISSING GUI OBJECT WITH ID '_typebox_background'!");
     let textbox_visibility = textbox_visibility_option.expect("MISSING GUI OBJECT WITH ID '_textbox_background'!");
 
-    // Tick clock (must be after everything)
-    // basically if there's enough of a jump, it's not worth the stutters, preserve gameplay over ego :<
+    // Tick clock
     let to_tick = if time.delta_secs() > 1. { std::time::Duration::from_secs_f32(0.) } else { time.delta() };
     scroll_stopwatch.0.tick(to_tick);
-
-    /* GPT EVENTS [Transition::GPTSay] */
-    for ev in gpt_message.read() {
-        // Grab the character by reference matching the one notated in the event
-        let character: &Character = find_character(&ev.name).expect("Couldn't find associated character!");
-
-        /* GPT GENERATE - GENERATE MESSAGES FOR PLAYER INTERACTION */
-        // Builds a full chat transition with the intent of completing a set goal
-        // (contained in the event)
-        let ret = generate_chat_transitions(&character, &game_state, &ev);
-        match ret {
-            Ok(mut transitions) => {
-                println!("[ Inserting {} transitions... ]", transitions.len());
-                game_state.extra_transitions.append(&mut transitions);
-
-                /* GPT CHECK - CHECK IF THE CHARACTER ACHIEVED THEIR GOAL! */
-                // Any errors here should literally result in continuation of the game.
-                // It's way easier to let the next prompt be generated,
-                // and let the player see the dialog that was just generated anyway
-                // (plus, it could be OpenAI rate limits)
-                if let Some(goal_status) = determine_goal_status(&character, &game_state, &ev){
-                    println!("[ Goal Status: {} ]", goal_status);
-                    if !goal_status {
-                        println!("[ Inserting GPTGet transition... ]");
-                        game_state.extra_transitions.insert(0,Transition::GPTGet(ev.name.clone(), ev.goal.clone())); // *! passes the past goal
-                        println!("[ Current extra transitions: {:?} ]", game_state.extra_transitions);
-                    }
-                };
-            },
-            Err(e) => {
-                info!("[ Error: {:?} ]", e);
-
-                let mut error_message = String::new();
-                match e {
-                    GPTError::RequestBuilderError => {
-                        // Major issue, probably means the player corrupted something.
-                        // This only occurs if the previous messages and goals can't be
-                        // parsed, which is a big deal, because it's barely possible without
-                        // some kinda cheat engine. Resave error.
-                        error_message.push_str("Error parsing previous messages.\nFalling back to last save point...");
-                    },
-                    GPTError::LengthError => {
-                        // The resulting body from OpenAI was too long. Don't know how
-                        // this could ever even happen, but just in case, it'd be a resave
-                        // error.
-                        error_message.push_str("Response from OpenAI too long.\nContact the dev, he doesn't actually think this error is possible.\nFalling back to last save point...");
-                    },
-                    GPTError::IOError => {
-                        // Likely means that the player lost or does not have internet
-                        // connection. Alert the player to try again, and resave error.
-                        error_message.push_str("Unable to send request to OpenAI after 5 attempts!\nPlease check your internet connection and firewall settings.\nFalling back to last save point...");
-                    },
-                    GPTError::OpenAIError => {
-                        // This means the request faced a failure status code from OpenAI,
-                        // meaning OpenAI is down or your api key is restricted / incorrect,
-                        // meaning the engine should alert the player and resave error.
-                        error_message.push_str("Received bad error code from OpenAI.\nVerify that your API key is correct and that you're not blacklisted or rate limited.\nFalling back to last save point...");
-                    },
-                    GPTError::UnparseableOpenAIResponse => {
-                        // I literally have no idea how this could happen. If it does, that's
-                        // probably indicitive of OpenAI changing the way their response JSON
-                        // is formatted. Resave error.
-                        error_message.push_str("Error parsing OpenAI response.\nContact the dev, he doesn't actually think this error is possible.\nFalling back to last save point...");
-                    },
-                    _ => panic!("Undefined behaviour")
-                }
-
-                let current_scene_id = game_state.current_scene_id.clone();
-                info_text.0 = error_message.clone();
-
-                game_state.extra_transitions.insert(0,Transition::Scene(current_scene_id));
-            },
-        }
-
-        game_state.blocking = false;
-    }
-
-    /* GPT GET (Input) Event INITIALIZATION [Transition::GPTGet] */
-    for ev in get_message.read() {
-        game_state.blocking = true;
-
-        // Make the parent typebox visible
-        *typebox_visibility = Visibility::Visible;
-
-        // Reset the typebox
-        type_text.0 = String::from("");
-
-        game_state.extra_transitions.insert(0,Transition::GPTSay(ev.past_character.clone(), ev.past_goal.clone())); // *! passes the past goal
-    }
-
-    /* GPT GET (Input) Event ONGOING [Transition::GPTGet] */
-    // For each character input
-    for event in input_messages.read() {
-        match event.key_code {
-            KeyCode::Backspace => { // If BACKSPACE, remove a character
-                type_text.0.pop();
-            },
-            KeyCode::Enter => { // If ENTER, finish the prompt
-                println!("[ Player finished typing: {} ]", name_text.0);
-
-                // Hide textbox parent object
-                *typebox_visibility = Visibility::Hidden;
-
-                // Add the typed message
-                let name = game_state.playername.clone();
-                game_state.past_messages.push(CustomMessage {
-                    role: String::from("user"),
-                    content: format!("{}: {}", name, type_text.0.clone()),
-                });
-
-                // Allow transitions to be run again
-                game_state.blocking = false;
-            }
-            _ => {},
-        }
-        if let Key::Character(char) = &event.logical_key {
-            if type_text.0.len() < 310 {
-                if let Some(c) = char.chars().next() {
-                    type_text.0.push(c);
-                }
-            }
-        }
-    }
 
     /* STANDARD SAY EVENTS INITIALIZATION [Transition::Say] */
     for ev in event_message.read() {
@@ -471,7 +340,6 @@ fn update_chatbox(
         // Make the parent textbox visible
         *textbox_visibility = Visibility::Visible;
 
-        // Update both the name and message text objects
         // Reset the scrolling timer
         scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(0.));
 
@@ -501,10 +369,8 @@ fn update_chatbox(
         });
 
         message_scroll_text_obj.message = ev.message.clone();
-
     }
 
-    // (there needs to be a way to clean this up)
     // If the textbox is hidden, ignore the next section dedicated to updating it
     if *textbox_visibility == Visibility::Hidden {
         return;
@@ -513,7 +379,7 @@ fn update_chatbox(
     // Take the original string from the message object
     let mut original_string: String = message_scroll_text_obj.message.clone();
 
-    // Get the section of the string according to the ellapsed time
+    // Get the section of the string according to the elapsed time
     let length: u32 = (scroll_stopwatch.0.elapsed_secs() * 50.) as u32;
 
     // Return the section and apply it to the text object
@@ -537,7 +403,7 @@ fn update_chatbox(
         ];
         if ( position.x > textbox_bounds[0] && position.x < textbox_bounds[1] ) && ( position.y > textbox_bounds[2] && position.y < textbox_bounds[3] ) && buttons.just_pressed(MouseButton::Left) {
             if length < message_scroll_text_obj.message.len() as u32 {
-                // Skip message scrolling (bad code, should not be real)
+                // Skip message scrolling
                 scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(100000000.));
                 return;
             }
