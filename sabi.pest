@@ -21,10 +21,14 @@ stage_command = { "(" ~ stage_command_type ~ ")" }
     stage_command_type = _{ 
         gui_change |
         emotion_change |
-        background_change }
+        background_change |
+        scene_change |
+        act_change }
     gui_change = { "GUI" ~ gui_element ~ "changes" ~ "to" ~ expr }
     background_change = { "Background" ~ "changes" ~ "to" ~ expr }
     emotion_change = { character_name ~ "looks" ~ emotion_name }
+    scene_change = { "Scene" ~ expr ~ "begins" }
+    act_change = { "Act" ~ expr ~ "begins" }
     gui_element = { "textbox" | "namebox" }
 
 // Code statements

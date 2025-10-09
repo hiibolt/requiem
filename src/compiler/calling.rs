@@ -3,12 +3,25 @@ use crate::compiler::ast::{CodeStatement, Dialogue, Evaluate, StageCommand, Stat
 use bevy::prelude::*;
 use anyhow::{Context, Result};
 
-pub struct InvokeContext<'l, 'a, 'b, 'c, 'd, 'e> {
+/* Messages */
+#[derive(Message)]
+pub struct SceneChangeMessage {
+    pub scene_id: String
+}
+
+#[derive(Message)]
+pub struct ActChangeMessage {
+    pub act_id: String
+}
+
+pub struct InvokeContext<'l, 'a, 'b, 'c, 'd, 'e, 'f, 'g> {
     pub character_say_message: &'l mut MessageWriter<'a, CharacterSayMessage>,
     pub emotion_change_message: &'l mut MessageWriter<'b, EmotionChangeMessage>,
     pub background_change_message: &'l mut MessageWriter<'c, BackgroundChangeMessage>,
     pub gui_change_message: &'l mut MessageWriter<'d, GUIChangeMessage>,
-    pub game_state: &'l mut ResMut<'e, VisualNovelState>
+    pub scene_change_message: &'l mut MessageWriter<'e, SceneChangeMessage>,
+    pub act_change_message: &'l mut MessageWriter<'f, ActChangeMessage>,
+    pub game_state: &'l mut ResMut<'g, VisualNovelState>
 }
 pub trait Invoke {
     fn invoke ( &self, ctx: InvokeContext ) -> Result<()>;
@@ -62,6 +75,28 @@ impl Invoke for StageCommand {
                 ctx.gui_change_message.write(GUIChangeMessage {
                     gui_id,
                     sprite_id
+                });
+
+                Ok(())
+            },
+            StageCommand::SceneChange { scene_expr } => {
+                let scene_id = scene_expr.evaluate_into_string()
+                    .context("...while evaluating SceneChange expression")?;
+                
+                info!("Invoking StageCommand::SceneChange to {}", scene_id);
+                ctx.scene_change_message.write(SceneChangeMessage {
+                    scene_id
+                });
+
+                Ok(())
+            },
+            StageCommand::ActChange { act_expr } => {
+                let act_id = act_expr.evaluate_into_string()
+                    .context("...while evaluating ActChange expression")?;
+                
+                info!("Invoking StageCommand::ActChange to {}", act_id);
+                ctx.act_change_message.write(ActChangeMessage {
+                    act_id
                 });
 
                 Ok(())

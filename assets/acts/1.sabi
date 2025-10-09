@@ -1,7 +1,23 @@
-SCENE 1
+SCENE intro
     (GUI textbox changes to "TEXTBOX_NASTYA")
     (Background changes to "main_classroom_noon")
-    { log "This is an example of a code block" }
-    MC: "Hi Nayu!"
-    Nayu: (neutral) "Hi!" (Nayu looks happy) "I'm glad to see you, how is everything?"
+    MC: "Welcome to the new scene system!"
+    Nayu: (neutral) "This is the intro scene."
+    
+    (Scene "main" begins)
+CURTAIN
+
+SCENE main
+    (Background changes to "main_classroom_day")
+    MC: "This is the main scene!"
+    Nayu: (happy) "You can now switch between scenes easily."
+
+    (Scene "epilogue" begins)
+CURTAIN
+
+SCENE epilogue
+    MC: "Normally, this scene won't be reached directly."
+    Nayu: "But it was accessed via scene commands!"
+
+    (Act "2" begins)
 CURTAIN

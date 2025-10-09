@@ -81,8 +81,13 @@ pub fn expr_to_string(expr: &Expr) -> Result<String> {
     }
 }
 
+
+#[derive(Debug, Clone, Default)]
+pub struct Act {
+    pub scenes: HashMap<String, Box<Scene>>,
+    pub entrypoint: String,
+}
 pub type Acts = HashMap<String, Box<Act>>;
-pub type Act = HashMap<String, Box<Scene>>;
 
 #[derive(Debug, Clone)]
 pub enum CodeStatement {
@@ -93,7 +98,9 @@ pub enum CodeStatement {
 pub enum StageCommand {
     BackgroundChange { background_expr: Box<Expr> },
     GUIChange { id_expr: Box<Expr>, sprite_expr: Box<Expr> },
-    EmotionChange { character: String, emotion: String }
+    EmotionChange { character: String, emotion: String },
+    SceneChange { scene_expr: Box<Expr> },
+    ActChange { act_expr: Box<Expr> }
 }
 
 #[derive(Debug, Clone)]
@@ -198,6 +205,20 @@ pub fn build_stage_command(pair: Pair<Rule>) -> Result<Statement> {
                 character: character_name_pair.as_str().to_owned(), 
                 emotion: emotion_name_pair.as_str().to_owned() 
             }
+        },
+        Rule::scene_change => {
+            let expr_pair = command_pair.into_inner().next()
+                .context("Scene change missing expression")?;
+            let expr = build_expression(expr_pair)
+                .context("Failed to build expression for scene change")?;
+            StageCommand::SceneChange { scene_expr: Box::new(expr) }
+        },
+        Rule::act_change => {
+            let expr_pair = command_pair.into_inner().next()
+                .context("Act change missing expression")?;
+            let expr = build_expression(expr_pair)
+                .context("Failed to build expression for act change")?;
+            StageCommand::ActChange { act_expr: Box::new(expr) }
         },
         other => bail!("Unexpected rule in stage command: {:?}", other)
     };
@@ -304,7 +325,11 @@ pub fn build_dialogue(pair: Pair<Rule>) -> Result<Vec<Statement>> {
 }
 
 pub fn build_scenes(pair: Pair<Rule>) -> Result<Act> {
-    let mut act: Act = Act::new();
+    let mut act = Act {
+        scenes: HashMap::new(),
+        entrypoint: String::new(),
+    };
+    let mut first_scene_id: Option<String> = None;
     
     for scene_pair in pair.into_inner() {
         match scene_pair.as_rule() {
@@ -315,6 +340,11 @@ pub fn build_scenes(pair: Pair<Rule>) -> Result<Act> {
                     .context("Scene missing ID")?
                     .as_str()
                     .to_owned();
+                
+                // Set the first scene as entrypoint
+                if first_scene_id.is_none() {
+                    first_scene_id = Some(scene_id.clone());
+                }
                 
                 let mut statements = Vec::new();
                 for statement_pair in inner_rules {
@@ -335,12 +365,13 @@ pub fn build_scenes(pair: Pair<Rule>) -> Result<Act> {
                     statements.push(stmt);
                 }
                 
-                ensure!(act.insert(scene_id.clone(), Box::new(Scene { statements })).is_none(), "Duplicate scene ID '{}'", scene_id);
+                ensure!(act.scenes.insert(scene_id.clone(), Box::new(Scene { statements })).is_none(), "Duplicate scene ID '{}'", scene_id);
             },
             Rule::EOI => continue,
             other => bail!("Unexpected rule when parsing scenes: {:?}", other),
         }
     }
     
+    act.entrypoint = first_scene_id.context("No scenes found in act")?;
     Ok(act)
 }

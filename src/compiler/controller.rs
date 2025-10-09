@@ -1,4 +1,4 @@
-use crate::compiler::calling::{Invoke, InvokeContext};
+use crate::compiler::calling::{Invoke, InvokeContext, SceneChangeMessage, ActChangeMessage};
 use crate::{BackgroundChangeMessage, CharacterSayMessage, EmotionChangeMessage, GUIChangeMessage, VisualNovelState};
 use crate::compiler::ast::{build_scenes, Acts, Rule, SabiParser};
 use std::path::PathBuf;
@@ -44,9 +44,11 @@ impl Plugin for Compiler {
             .init_resource::<ControllersReady>()
             .add_message::<ControllerReadyMessage>()
             .add_message::<TriggerControllersMessage>()
+            .add_message::<SceneChangeMessage>()
+            .add_message::<ActChangeMessage>()
             .add_systems(Startup, parse)
             .add_systems(Update, check_states.run_if(in_state(RequiemState::WaitingForControllers)))
-            .add_systems(Update, run.run_if(in_state(RequiemState::Running)));
+            .add_systems(Update, (run, handle_scene_changes, handle_act_changes).run_if(in_state(RequiemState::Running)));
     }
 }
 
@@ -134,32 +136,38 @@ fn parse ( mut game_state: ResMut<VisualNovelState> ) -> Result<(), BevyError> {
             .context("...while trying to parse a script file or directory")?;
     }
     
-    // Setup entrypoint
-    let act = acts
-        .get("1")
-        .context("Missing '1' act file! Please ensure you have a `1.sabi` file with SCENE 1.")?
-        .clone();
-    let scene = act
-        .get("1")
-        .context("Missing '1' scene in act 1! Please ensure you have a SCENE 1 in your `1.sabi` file.")?
+    // Setup entrypoint - use first available act and its entrypoint scene
+    let first_act_id = acts.keys().min()
+        .context("No acts found! Please ensure you have at least one `.sabi` file in the acts directory.")?
         .clone();
     
-    game_state.act = act;
+    let act = acts.get(&first_act_id)
+        .context("Failed to get first act")?
+        .clone();
+        
+    let scene = act.scenes.get(&act.entrypoint)
+        .context("Failed to get entrypoint scene")?
+        .clone();
+    
+    game_state.acts = acts;
+    game_state.act = act.clone();
     game_state.scene = scene;
     game_state.statements = game_state.scene.statements.clone().into_iter();
     game_state.blocking = false;
     
-    info!("Completed pre-compilation successfully");
+    info!("Completed pre-compilation successfully - starting with act '{}', scene '{}'", first_act_id, act.entrypoint);
     Ok(())
 }
 
-fn run<'a, 'b, 'c, 'd, 'e> (
+fn run<'a, 'b, 'c, 'd, 'e, 'f, 'g> (
     mut character_say_message: MessageWriter<'a, CharacterSayMessage>,
     mut emotion_change_message: MessageWriter<'b, EmotionChangeMessage>,
     mut background_change_message: MessageWriter<'c, BackgroundChangeMessage>,
     mut gui_change_message: MessageWriter<'d, GUIChangeMessage>,
+    mut scene_change_message: MessageWriter<'e, SceneChangeMessage>,
+    mut act_change_message: MessageWriter<'f, ActChangeMessage>,
 
-    mut game_state: ResMut<'e, VisualNovelState>,
+    mut game_state: ResMut<'g, VisualNovelState>,
 ) {
     if game_state.blocking {
         return;
@@ -171,8 +179,51 @@ fn run<'a, 'b, 'c, 'd, 'e> (
                 emotion_change_message: &mut emotion_change_message,
                 background_change_message: &mut background_change_message,
                 gui_change_message: &mut gui_change_message,
+                scene_change_message: &mut scene_change_message,
+                act_change_message: &mut act_change_message,
                 game_state: &mut game_state
             })
             .expect("...while invoking statement");
+    }
+}
+
+fn handle_scene_changes(
+    mut scene_change_messages: MessageReader<SceneChangeMessage>,
+    mut game_state: ResMut<VisualNovelState>,
+) {
+    for msg in scene_change_messages.read() {
+        if let Some(new_scene) = game_state.act.scenes.get(&msg.scene_id).cloned() {
+            info!("Changing to scene: {}", msg.scene_id);
+            game_state.scene = new_scene;
+            game_state.statements = game_state.scene.statements.clone().into_iter();
+            game_state.blocking = false;
+            println!("[ Scene changed to '{}' ]", msg.scene_id);
+        } else {
+            error!("Scene '{}' not found in current act!", msg.scene_id);
+        }
+    }
+}
+
+fn handle_act_changes(
+    mut act_change_messages: MessageReader<ActChangeMessage>,
+    mut game_state: ResMut<VisualNovelState>,
+) {
+    for msg in act_change_messages.read() {
+        if let Some(new_act) = game_state.acts.get(&msg.act_id).cloned() {
+            info!("Changing to act: {}", msg.act_id);
+            
+            // Use the entrypoint scene from the new act
+            if let Some(entrypoint_scene) = new_act.scenes.get(&new_act.entrypoint).cloned() {
+                game_state.act = new_act.clone();
+                game_state.scene = entrypoint_scene;
+                game_state.statements = game_state.scene.statements.clone().into_iter();
+                game_state.blocking = false;
+                println!("[ Act changed to '{}', starting at entrypoint scene '{}' ]", msg.act_id, new_act.entrypoint);
+            } else {
+                error!("Entrypoint scene '{}' not found in act '{}'", new_act.entrypoint, msg.act_id);
+            }
+        } else {
+            error!("Act '{}' not found!", msg.act_id);
+        }
     }
 }
