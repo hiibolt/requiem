@@ -1,13 +1,14 @@
-use std::collections::HashMap;
-
+use crate::compiler::calling::{Invoke, InvokeContext, SceneChangeMessage, ActChangeMessage};
+use crate::{BackgroundChangeMessage, CharacterSayMessage, EmotionChangeMessage, GUIChangeMessage, VisualNovelState};
+use crate::compiler::ast::{build_scenes, Acts, Rule, SabiParser};
+use std::path::PathBuf;
 use bevy::prelude::*;
-
-use crate::{compile_to_transitions, BackgroundChangeMessage, CharacterSayMessage, EmotionChangeMessage, GPTGetMessage, GPTSayMessage, GUIChangeMessage, VisualNovelState};
-
+use anyhow::{bail, ensure, Context, Result};
+use pest::Parser;
 
 /* States */
 #[derive(States, Debug, Default, Clone, Copy, Hash, Eq, PartialEq)]
-enum RequiemState {
+enum SabiState {
     #[default]
     WaitingForControllers,
     Running,
@@ -33,107 +34,29 @@ pub enum Controller {
     Chat,
 }
 
-#[derive(Clone, Debug)]
-pub enum Transition {
-    Say(String, String),
-    SetEmotion(String, String),
-    SetBackground(String),
-    SetGUI(String, String),
-    GPTGet(String, String),
-    GPTSay(String, String),
-    Log(String),
-    Scene(String),
-    End
-}
-impl Transition {
-    fn call(
-        &self,
-        character_say_message: &mut MessageWriter<CharacterSayMessage>,
-        emotion_change_message: &mut MessageWriter<EmotionChangeMessage>,
-        background_change_message: &mut MessageWriter<BackgroundChangeMessage>,
-        gui_change_message: &mut MessageWriter<GUIChangeMessage>,
-        gpt_say_message: &mut MessageWriter<GPTSayMessage>,
-        gpt_get_message: &mut MessageWriter<GPTGetMessage>,
 
-        game_state: &mut ResMut<VisualNovelState>,
-    ) {
-        match self {
-            Transition::Say(character_name, msg) => {
-                info!("Calling Transition::Say");
-                character_say_message.write(CharacterSayMessage {
-                    name: character_name.to_owned(),
-                    message: msg.to_owned()
-                });
-                game_state.blocking = true;
-            },
-            Transition::SetEmotion(character_name, emotion) => {
-                info!("Calling Transition::SetEmotion");
-                emotion_change_message.write(EmotionChangeMessage {
-                    name: character_name.to_owned(),
-                    emotion: emotion.to_owned()
-                });
-            }
-            Transition::SetBackground(background_id) => {
-                info!("Calling Transition::SetBackground");
-                background_change_message.write(BackgroundChangeMessage {
-                    background_id: background_id.to_owned()
-                });
-            },
-            Transition::SetGUI(gui_id, sprite_id) => {
-                info!("Calling Transition::SetGUI");
-                gui_change_message.write(GUIChangeMessage {
-                    gui_id: gui_id.to_owned(),
-                    sprite_id: sprite_id.to_owned()
-                });
-            },
-            Transition::GPTSay(character_name, character_goal) => {
-                info!("Calling Transition::GPTSay");
-                game_state.blocking = true;
-                gpt_say_message.write(GPTSayMessage {
-                    name: character_name.to_owned(),
-                    goal: character_goal.to_owned(),
-                    advice: None
-                });
-            },
-            Transition::GPTGet(past_character, past_goal) => {
-                info!("Calling Transition::GPTGet");
-                game_state.blocking = true;
-                gpt_get_message.write(GPTGetMessage {past_character: past_character.clone(), past_goal: past_goal.clone()});
-            },
-            Transition::Log(msg) => println!("{msg}"),
-            Transition::Scene(id) => {
-                info!("Calling Transition::Scene");
-                let script_transitions = game_state.all_script_transitions
-                    .get(id.as_str())
-                    .expect(&format!("Missing {id} script file! Please remember the game requires an entry.txt script file to have a starting position."))
-                    .clone();
-                game_state.transitions_iter = script_transitions.into_iter();
-                game_state.current_scene_id = id.clone();
-            },
-            Transition::End => {
-                todo!();
-            }
-        }
-    }
-}
+
 pub struct Compiler;
 impl Plugin for Compiler {
     fn build(&self, app: &mut App) {
         app
-            .init_state::<RequiemState>()
+            .init_state::<SabiState>()
             .init_resource::<ControllersReady>()
             .add_message::<ControllerReadyMessage>()
             .add_message::<TriggerControllersMessage>()
-            .add_systems(Startup, pre_compile)
-            .add_systems(Update, check_states.run_if(in_state(RequiemState::WaitingForControllers)))
-            .add_systems(Update, run_transitions.run_if(in_state(RequiemState::Running)));
+            .add_message::<SceneChangeMessage>()
+            .add_message::<ActChangeMessage>()
+            .add_systems(Startup, parse)
+            .add_systems(Update, check_states.run_if(in_state(SabiState::WaitingForControllers)))
+            .add_systems(Update, (run, handle_scene_changes, handle_act_changes).run_if(in_state(SabiState::Running)));
     }
 }
+
 fn check_states(
     mut msg_controller_reader: MessageReader<ControllerReadyMessage>,
     mut controllers_state: ResMut<ControllersReady>,
     mut msg_writer: MessageWriter<TriggerControllersMessage>,
-    mut requiem_state: ResMut<NextState<RequiemState>>,
+    mut sabi_state: ResMut<NextState<SabiState>>,
 ) {
     for event in msg_controller_reader.read() {
         let controller = match event.0 {
@@ -147,97 +70,166 @@ fn check_states(
        && controllers_state.character_controller
        && controllers_state.chat_controller {
         msg_writer.write(TriggerControllersMessage);
-        requiem_state.set(RequiemState::Running);
+        sabi_state.set(SabiState::Running);
     }
 }
-fn pre_compile( mut game_state: ResMut<VisualNovelState>){
-    info!("Starting pre-compilation");
-    /* Character Setup */
-    // Asset Gathering
-    let mut all_script_transitions = HashMap::<String, Vec<Transition>>::new();
-    let scripts_dir = std::env::current_dir()
-        .expect("Failed to get current directory!")
-        .join("assets")
-        .join("scripts");
-    let scripts_dir_entries: Vec<std::fs::DirEntry> = std::fs::read_dir(scripts_dir)
-        .expect("Unable to read scripts folder!")
-        .filter_map(|entry_result| {
-            entry_result.ok()
-        })
-        .collect();
-    for script_file_entry in scripts_dir_entries {
-        let script_name: String = script_file_entry
+
+fn parse_direntry ( 
+    acts: &mut Acts,
+    dir_entry: std::fs::DirEntry
+) -> Result<()> {
+    let file_type = dir_entry.file_type()
+        .context("Couldn't get file type!")?;
+    
+    if file_type.is_file() {
+        let file_path = dir_entry.path();
+        ensure!(file_path.extension().map_or(false, |ext| ext == "sabi"), "Recieved a file that wasn't a `.sabi` file: {:?}", file_path.extension());
+        
+        // Get the act name from the file stem
+        let act_name = dir_entry
             .path()
-            .as_path()
-            .file_stem().expect("Your script file must have a name! `.txt` is illegal.")
-            .to_str().expect("Malformed UTF-8 in script file name, please verify it meets UTF-8 validity!")
-            .to_owned();
-        let script_contents: String = std::fs::read_to_string(script_file_entry.path())
-            .expect("Contents of the script file must be valid UTF-8!");
-        let script_transitions: Vec<Transition> = compile_to_transitions(script_contents);
-
-        println!("[ [ Imported script '{}'! ] ]", script_name);
-        all_script_transitions.insert(script_name, script_transitions);
+            .file_stem()
+            .context("Invalid script file name")?
+            .to_string_lossy()
+            .into_owned();
+    
+        // Compile the act
+        info!("Compiling act: {}", act_name);
+        let scenes = {
+            let script_contents = std::fs::read_to_string(&file_path)
+                .with_context(|| format!("Failed to read script file: {:?}", file_path))?;
+            let scene_pair = SabiParser::parse(Rule::act, &script_contents)
+                .with_context(|| format!("Failed to parse script file: {}", act_name))?
+                .next()
+                .context("Script file is empty")?;
+            
+            build_scenes(scene_pair)
+                .context("Failed to build scenes from AST")?
+        };
+        
+        ensure!(acts.insert(act_name.clone(), Box::new(scenes)).is_none(), "Duplicate act name '{}'", act_name);
+        return Ok(());
     }
 
-    // Setup entrypoint
-    let entry = all_script_transitions
-        .get("entry")
-        .expect("Missing 'entry' script file! Please remember the game requires an entry.txt script file to have a starting position.")
-        .clone();
-    game_state.transitions_iter = entry.into_iter();
-    game_state.all_script_transitions = all_script_transitions;
-    game_state.current_scene_id = String::from("entry");
+    if file_type.is_dir() {
+        for entry_result in std::fs::read_dir(dir_entry.path())
+            .context("Couldn't read directory!")? {
+            let entry = entry_result
+                .context("Couldn't get directory entry!")?;
+            parse_direntry(acts, entry)?;
+        }
+        return Ok(());
+    }
 
-    game_state.blocking = false;
-
-    info!("Completed pre-compilation");
+    bail!("Recieved a directory entry that wasn't a file or directory (likely a symlink)!");
 }
-fn run_transitions (
-    mut character_say_message: MessageWriter<CharacterSayMessage>,
-    mut emotion_change_message: MessageWriter<EmotionChangeMessage>,
-    mut background_change_message: MessageWriter<BackgroundChangeMessage>,
-    mut gui_change_message: MessageWriter<GUIChangeMessage>,
-    mut gpt_say_message: MessageWriter<GPTSayMessage>,
-    mut gpt_get_message: MessageWriter<GPTGetMessage>,
-
-    mut game_state: ResMut<VisualNovelState>,
-) {
-    loop {
-        while game_state.extra_transitions.len() > 0 {
-            if game_state.blocking {
-                return;
-            }
-            if let Some(transition) = game_state.extra_transitions.pop() {
-                transition.call(
-                    &mut character_say_message,
-                    &mut emotion_change_message,
-                    &mut background_change_message,
-                    &mut gui_change_message,
-                    &mut gpt_say_message,
-                    &mut gpt_get_message,
-
-                    &mut game_state,);
-            }
-        }
-        if game_state.blocking {
-            return;
-        }
-        match game_state.transitions_iter.next() {
-            Some(transition) => {
-                transition.call(
-                    &mut character_say_message,
-                    &mut emotion_change_message,
-                    &mut background_change_message,
-                    &mut gui_change_message,
-                    &mut gpt_say_message,
-                    &mut gpt_get_message,
-
-                    &mut game_state,);
-            },
-            None => {
-                return;
-            }
-        }
+fn parse ( mut game_state: ResMut<VisualNovelState> ) -> Result<(), BevyError> {
+    info!("Starting parsing");
+    
+    let mut acts: Acts = Acts::new();
+    for dir_entry_result in std::fs::read_dir(PathBuf::from(".").join("assets").join("acts"))
+        .context("...while trying to read from the scripts directory")?
+    {
+        let dir_entry = dir_entry_result
+            .context("...while trying to read a directory entry in the scripts directory")?;
+        parse_direntry(&mut acts, dir_entry)
+            .context("...while trying to parse a script file or directory")?;
     }
+    
+    // Setup entrypoint - use first available act and its entrypoint scene
+    let first_act_id = acts.keys().min()
+        .context("No acts found! Please ensure you have at least one `.sabi` file in the acts directory.")?
+        .clone();
+    
+    let act = acts.get(&first_act_id)
+        .context("Failed to get first act")?
+        .clone();
+        
+    let scene = act.scenes.get(&act.entrypoint)
+        .context("Failed to get entrypoint scene")?
+        .clone();
+    
+    game_state.acts = acts;
+    game_state.act = act.clone();
+    game_state.scene = scene;
+    game_state.statements = game_state.scene.statements.clone().into_iter();
+    game_state.blocking = false;
+    
+    info!("Completed pre-compilation successfully - starting with act '{}', scene '{}'", first_act_id, act.entrypoint);
+    
+    Ok(())
+}
+
+fn run<'a, 'b, 'c, 'd, 'e, 'f, 'g> (
+    mut character_say_message: MessageWriter<'a, CharacterSayMessage>,
+    mut emotion_change_message: MessageWriter<'b, EmotionChangeMessage>,
+    mut background_change_message: MessageWriter<'c, BackgroundChangeMessage>,
+    mut gui_change_message: MessageWriter<'d, GUIChangeMessage>,
+    mut scene_change_message: MessageWriter<'e, SceneChangeMessage>,
+    mut act_change_message: MessageWriter<'f, ActChangeMessage>,
+
+    mut game_state: ResMut<'g, VisualNovelState>,
+) -> Result<(), BevyError> {
+    if game_state.blocking {
+        return Ok(());
+    }
+
+    if let Some(statement) = game_state.statements.next() {
+        statement.invoke(InvokeContext {
+                character_say_message: &mut character_say_message,
+                emotion_change_message: &mut emotion_change_message,
+                background_change_message: &mut background_change_message,
+                gui_change_message: &mut gui_change_message,
+                scene_change_message: &mut scene_change_message,
+                act_change_message: &mut act_change_message,
+                game_state: &mut game_state
+            })
+            .context("Failed to invoke statement")?;
+    }
+
+    Ok(())
+}
+
+fn handle_scene_changes(
+    mut scene_change_messages: MessageReader<SceneChangeMessage>,
+    mut game_state: ResMut<VisualNovelState>,
+) -> Result<(), BevyError> {
+    for msg in scene_change_messages.read() {
+        let new_scene = game_state.act.scenes.get(&msg.scene_id)
+            .with_context(|| format!("Scene '{}' not found in current act", msg.scene_id))?
+            .clone();
+        
+        info!("Changing to scene: {}", msg.scene_id);
+        game_state.scene = new_scene;
+        game_state.statements = game_state.scene.statements.clone().into_iter();
+        game_state.blocking = false;
+        info!("[ Scene changed to '{}' ]", msg.scene_id);
+    }
+
+    Ok(())
+}
+
+fn handle_act_changes(
+    mut act_change_messages: MessageReader<ActChangeMessage>,
+    mut game_state: ResMut<VisualNovelState>,
+) -> Result<(), BevyError> {
+    for msg in act_change_messages.read() {
+        let new_act = game_state.acts.get(&msg.act_id)
+            .with_context(|| format!("Act '{}' not found", msg.act_id))?
+            .clone();
+        
+        info!("Changing to act: {}", msg.act_id);
+        
+        let entrypoint_scene = new_act.scenes.get(&new_act.entrypoint)
+            .with_context(|| format!("Entrypoint scene '{}' not found in act '{}'", new_act.entrypoint, msg.act_id))?
+            .clone();
+        
+        game_state.act = new_act.clone();
+        game_state.scene = entrypoint_scene;
+        game_state.statements = game_state.scene.statements.clone().into_iter();
+        game_state.blocking = false;
+        info!("[ Act changed to '{}', starting at entrypoint scene '{}' ]", msg.act_id, new_act.entrypoint);
+    }
+    
+    Ok(())
 }

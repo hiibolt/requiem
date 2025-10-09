@@ -1,15 +1,18 @@
 [package]
-name = "requiem"
+name = "sabi"
 version = "0.1.0"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0"
 bevy = "0.17.1"
 json = "0.12.4"
+lazy_static = "1.4"
+pest = "2.8.3"
+pest_derive = "2.8.3"
 regex = "1.8.4"
 serde = { version="1.0.164", features = ["derive"] }
 serde_json = "1.0.99"
 thiserror = "2.0.17"
-ureq = { version="2.7.1", features = ["json"] }

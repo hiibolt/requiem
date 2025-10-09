@@ -1,16 +1,16 @@
 mod background;
 mod character;
 mod chat;
-mod intelligence;
 mod compiler;
 
 use crate::background::*;
 use crate::character::*;
 use crate::chat::*;
-use crate::intelligence::*;
 use crate::compiler::*;
+use crate::compiler::ast;
 
 use bevy::asset::AssetLoader;
+use bevy::ecs::error::ErrorContext;
 use bevy::{
     prelude::*,
     window::*,
@@ -56,7 +56,6 @@ impl AssetLoader for CharacterJsonLoader {
 
 #[derive(Component)]
 struct Object {
-    r#type: String,
     id: String
 }
 
@@ -64,34 +63,30 @@ struct Object {
 pub struct VisualNovelState {
     // Player-designated constants
     playername: String,
-    api_key: String,
 
+    // Assets
     gui_sprites: HashMap<String, Handle<Image>>,
 
-    all_script_transitions: HashMap<String, Vec<Transition>>,
-    transitions_iter: IntoIter<Transition>,
-    current_scene_id: String,
-
-    extra_transitions: Vec<Transition>,
-
-    past_messages: Vec<CustomMessage>,
-
+    // Game state
+    acts: ast::Acts,
+    act: Box<ast::Act>,
+    scene: Box<ast::Scene>,
+    statements: IntoIter<ast::Statement>,
     blocking: bool,
 }
 
-fn main() {
-    if std::env::var("OPENAI_API_KEY").is_err() {
-        panic!("Environment variable OPENAI_API_KEY needs to be set!");
-    }
+fn error_handler ( err: BevyError, ctx: ErrorContext ) {
+    panic!("Bevy error: {err:?}\nContext: {ctx:?}")
+}
 
+fn main() {
     App::new()
         .add_plugins(DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
-                    title: String::from("Ettethread - Requiem"),
+                    title: String::from("Sabi"),
                     resolution: (1280, 800).into(),
                     present_mode: PresentMode::AutoVsync,
-                    // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
                     prevent_default_event_handling: false,
                     ..default()
                 }),
@@ -101,6 +96,7 @@ fn main() {
         .init_resource::<VisualNovelState>()
         .init_asset::<Character>()
         .init_asset_loader::<CharacterJsonLoader>()
+        .set_error_handler(error_handler)
         .add_systems(Startup, setup)
         .add_plugins((
             Compiler,
@@ -115,10 +111,8 @@ fn setup(
     mut commands: Commands,
     mut game_state: ResMut<VisualNovelState>,
 ) {
-    // These are constants which would normally
-    //  be filled in by the player
+    // This would normally be filled in by the player
     game_state.playername = String::from("Bolt");
-    game_state.api_key = std::env::var("OPENAI_API_KEY").unwrap();
 
     // Create our primary camera (which is
     //  necessary even for 2D games)

@@ -1,6 +1,0 @@
-set type=`background` background=`main_classroom_noon`
-set type=`emotion` character=`Nayu` emotion=`NEUTRAL`
-set type=`GUI` id=`_textbox_background` sprite=`TEXTBOX_NASTYA`
-set type=`GUI` id=`_typebox_background` sprite=`TEXTBOX_LIBITINA`
-set type=`GUI` id=`_namebox_background` sprite=`NAMEBOX`
-scene id=`scene1`

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::{Result, Context};
 use bevy::{asset::{LoadState, LoadedFolder}, prelude::*};
 use serde::Deserialize;
 
@@ -17,16 +18,11 @@ enum CharacterControllerState {
 #[derive(Component, Debug, Default, Asset, TypePath, Deserialize, Clone)]
 pub struct Character {
     pub name: String,
-    pub outfit: Option<String>,
-    pub emotion: Option<String>,
+    pub outfit: String,
+    pub emotion: String,
     pub description: String,
     pub emotions: Vec<String>,
     pub outfits: Vec<String>,
-}
-impl Character {
-    fn to_show(&self) -> bool {
-        self.outfit.is_some() && self.emotion.is_some()
-    }
 }
 #[derive(Component, Debug)]
 pub struct CharacterSprites {
@@ -34,8 +30,6 @@ pub struct CharacterSprites {
 }
 
 /* Resources */
-#[derive(Resource)]
-pub struct OpacityFadeTimer(Timer);
 #[derive(Resource)]
 struct HandleToCharactersFolder(Handle<LoadedFolder>);
 #[derive(Resource)]
@@ -51,17 +45,13 @@ pub struct EmotionChangeMessage {
 pub struct CharacterController;
 impl Plugin for CharacterController {
     fn build(&self, app: &mut App) {
-        app.insert_resource(OpacityFadeTimer(Timer::from_seconds(
-            0.005,
-            TimerMode::Repeating,
-        )))
-        .add_message::<EmotionChangeMessage>()
-        .init_state::<CharacterControllerState>()
-        .add_systems(OnEnter(CharacterControllerState::Loading), import_characters)
-        .add_systems(Update, setup.run_if(in_state(CharacterControllerState::Loading)))
-        .add_systems(Update, wait_trigger.run_if(in_state(CharacterControllerState::Idle)))
-        .add_systems(OnEnter(CharacterControllerState::Running), spawn_characters)
-        .add_systems(Update, update_characters.run_if(in_state(CharacterControllerState::Running)));
+        app.add_message::<EmotionChangeMessage>()
+            .init_state::<CharacterControllerState>()
+            .add_systems(OnEnter(CharacterControllerState::Loading), import_characters)
+            .add_systems(Update, setup.run_if(in_state(CharacterControllerState::Loading)))
+            .add_systems(Update, wait_trigger.run_if(in_state(CharacterControllerState::Idle)))
+            .add_systems(OnEnter(CharacterControllerState::Running), spawn_characters)
+            .add_systems(Update, update_characters.run_if(in_state(CharacterControllerState::Running)));
     }
 }
 fn setup(
@@ -71,14 +61,16 @@ fn setup(
     folder_handle: Res<HandleToCharactersFolder>,
     mut controller_state: ResMut<NextState<CharacterControllerState>>,
     mut ev_writer: MessageWriter<ControllerReadyMessage>,
-) {
+) -> Result<(), BevyError> {
     if let Some(state) = asset_server.get_load_state(folder_handle.0.id()) {
         match state {
             LoadState::Loaded => {
                 if let Some(loaded_folder) = loaded_folders.get(folder_handle.0.id()) {
                     let mut characters: HashMap<String, CharacterSprites> = HashMap::new();
                     for handle in &loaded_folder.handles {
-                        let path = handle.path().expect("Error retrieving character asset path").path();
+                        let path = handle.path()
+                            .context("Error retrieving character asset path")?
+                            .path();
                         let name: String = match path.iter().nth(1).map(|s| s.to_string_lossy().into()) {
                             Some(name) => name,
                             None => continue
@@ -129,11 +121,12 @@ fn setup(
                 controller_state.set(CharacterControllerState::Idle);
             },
             LoadState::Failed(e) => {
-                panic!("Error loading assets... {}", e.to_string());
+                return Err(anyhow::anyhow!("Error loading character assets: {}", e.to_string()).into());
             }
             _ => {}
         }
     }
+    Ok(())
 }
 fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
     let loaded_folder = asset_server.load_folder("characters");
@@ -151,28 +144,27 @@ fn spawn_characters(
     mut commands: Commands,
     characters: Res<Assets<Character>>,
     characters_map: Res<CharacterToAssets>,
-) {
-    let characters_to_show: HashMap<String, Character> = characters.iter().filter_map(|(_, c)| {
-        if c.to_show() {
-            Some((c.name.clone(), c.clone()))
-        } else { None }
-    }).collect();
+) -> Result<(), BevyError> {
+    let characters: HashMap<String, Character> = characters.iter()
+        .map(|(_, c)| (c.name.clone(), c.clone()))
+        .collect();
     for (name, sprites) in &characters_map.0 {
-        let character = match characters_to_show.get(name) {
-            Some(c) => c,
-            None => continue
-        };
-        let current_sprite = sprites.outfits.get(&character.outfit.clone().unwrap()).expect("character.outfit attribute does not exist!")
-            .get(&character.emotion.clone().unwrap()).expect("character.emotion attribute does not exist!")
-            .clone();
+        let character = characters.get(name)
+            .with_context(|| format!("Character asset '{name}' does not exist!"))?;
+        let outfit = &character.outfit;
+        let emotion = &character.emotion;
+        let current_sprite = sprites.outfits.get(outfit)
+            .with_context(|| format!("Outfit '{outfit}'  does not exist!"))?
+            .get(emotion)
+            .with_context(|| format!("Emotion '{emotion}' does not exist!"))?;
+
         commands.spawn((
             Object {
-                r#type: String::from("character"),
                 id: format!("_character_{}", character.name)
             },
             character.clone(),
             Sprite {
-                image: current_sprite,
+                image: current_sprite.clone(),
                 ..default()
             },
             Transform::default()
@@ -181,6 +173,8 @@ fn spawn_characters(
             CharacterSprites { outfits: sprites.outfits.clone() }
         ));
     }
+
+    Ok(())
 }
 fn update_characters(
     mut character_query: Query<(
@@ -192,32 +186,23 @@ fn update_characters(
 
     _text_object_query: Query<(&mut Text, &mut GUIScrollText)>,
     _scroll_stopwatch: ResMut<ChatScrollStopwatch>,
-){
+) -> Result<(), BevyError> {
     for msg in message_emotion_change.read() {
         for (mut character, sprites, mut current_sprite) in character_query.iter_mut() {
             if character.name == msg.name {
-                character.emotion = Some(msg.emotion.to_owned());
-                let outfit = match &character.outfit {
-                    Some(outfit) => outfit,
-                    None => {
-                        println!("'character.outfit' attribute does not exist!");
-                        continue;
-                    }
-                };
-                let emotion = match &character.emotion {
-                    Some(emotion) => emotion,
-                    None => {
-                        println!("'character.emotion' attribute does not exist!");
-                        continue;
-                    }
-                };
+                character.emotion = msg.emotion.to_owned();
+                let outfit = &character.outfit;
+                let emotion = &character.emotion;
+                
                 current_sprite.image = sprites.outfits.get(outfit)
-                    .expect("'{outfit}' attribute does not exist!")
+                    .with_context(|| format!("'{outfit}' outfit sprite does not exist!"))?
                     .get(emotion)
-                    .expect("'default_emotion' atttribute does not exist!")
+                    .with_context(|| format!("'{emotion}' emotion sprite does not exist!"))?
                     .clone();
                 println!("[ Set emotion of '{}' to '{}']", msg.name, msg.emotion);
             }
         }
     }
+
+    Ok(())
 }
