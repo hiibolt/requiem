@@ -38,8 +38,6 @@ enum ChatControllerState {
 pub struct GUIScrollText {
     pub message: String
 }
-#[derive(Component)]
-pub struct TypeBox;
 
 /* Resources */
 #[derive(Resource)]
@@ -231,37 +229,6 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
             .with_bounds(TextBounds { width: Some(700.), height: Some(107.) }));
     });
 
-    // Spawn typebox
-    commands.spawn((
-        Object {
-            r#type: String::from("gui"),
-            id: String::from("_typebox_background")
-        },
-        Visibility::Hidden,
-        Transform::from_xyz(0., -275., 2.),
-        Sprite::default(),
-        TypeBox
-    ))
-    .with_children(|parent| {
-        parent.spawn(
-            TextBundle::new(
-                Object {
-                    r#type: String::from("gui"),
-                    id: String::from("_type_text")
-                },
-                "Start typing..."
-            )
-            .with_font(TextFont {
-                           font: asset_server.load("fonts/BOLDITALIC.ttf"),
-                           font_size: 27.0,
-                           ..default()
-                       })
-            .with_anchor(Anchor::TOP_LEFT)
-            .with_transform(Transform::from_xyz(-350., 62., 3.))
-            .with_bounds(TextBounds { width: Some(700.), height: Some(20000.) })
-        );
-    });
-
     commands.spawn(
         TextBundle::new(
             Object {
@@ -290,7 +257,7 @@ fn update_chatbox(
     mut event_message: MessageReader<CharacterSayMessage>,
     character_query: Query<&Character>,
     mut visibility_query: Query<(&mut Visibility, &Object)>,
-    mut text_object_query: Query<(&mut Text2d, &mut GUIScrollText, &Object), Without<TypeBox>>,
+    mut text_object_query: Query<(&mut Text2d, &mut GUIScrollText, &Object)>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
 
     mut game_state: ResMut<VisualNovelState>,

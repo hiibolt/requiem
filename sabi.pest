@@ -16,9 +16,15 @@ statement = _{
     }
 
 // Stage directions
-stage = { "(" ~ stage_command ~ ")" }
-    stage_command = _{ background_change }
-    background_change = { "Background changes to " ~ string }
+stage = { "[" ~ stage_command ~ "]" }
+    stage_command = _{ 
+        gui_change |
+        background_change }
+    gui_change = { "GUI " ~ gui_element ~ " changes to " ~ expr }
+    background_change = { "Background changes to " ~ expr }
+    gui_element = { 
+        "textbox" |
+        "namebox"}
 
 // Code statements
 code = { "{" ~ code_statement ~ "}" }
@@ -33,8 +39,8 @@ dialogue = { character_identifier ~ ": " ~ emotion_change? ~ expr }
 // Expressions
 expr = { term ~ (infix_op ~ term)* }
     term = _{ 
-        number | 
         string | 
+        number | 
         "(" ~ expr ~ ")" 
         }
     infix_op = _{ add }

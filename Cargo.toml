@@ -6,10 +6,10 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.100"
+anyhow = "1.0"
 bevy = "0.17.1"
 json = "0.12.4"
-lazy_static = "1.5.0"
+lazy_static = "1.4"
 pest = "2.8.3"
 pest_derive = "2.8.3"
 regex = "1.8.4"
