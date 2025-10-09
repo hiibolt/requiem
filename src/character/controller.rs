@@ -61,14 +61,16 @@ fn setup(
     folder_handle: Res<HandleToCharactersFolder>,
     mut controller_state: ResMut<NextState<CharacterControllerState>>,
     mut ev_writer: MessageWriter<ControllerReadyMessage>,
-) {
+) -> Result<(), BevyError> {
     if let Some(state) = asset_server.get_load_state(folder_handle.0.id()) {
         match state {
             LoadState::Loaded => {
                 if let Some(loaded_folder) = loaded_folders.get(folder_handle.0.id()) {
                     let mut characters: HashMap<String, CharacterSprites> = HashMap::new();
                     for handle in &loaded_folder.handles {
-                        let path = handle.path().expect("Error retrieving character asset path").path();
+                        let path = handle.path()
+                            .context("Error retrieving character asset path")?
+                            .path();
                         let name: String = match path.iter().nth(1).map(|s| s.to_string_lossy().into()) {
                             Some(name) => name,
                             None => continue
@@ -119,11 +121,12 @@ fn setup(
                 controller_state.set(CharacterControllerState::Idle);
             },
             LoadState::Failed(e) => {
-                panic!("Error loading assets... {}", e.to_string());
+                return Err(anyhow::anyhow!("Error loading character assets: {}", e.to_string()).into());
             }
             _ => {}
         }
     }
+    Ok(())
 }
 fn import_characters(mut commands: Commands, asset_server: Res<AssetServer>){
     let loaded_folder = asset_server.load_folder("characters");

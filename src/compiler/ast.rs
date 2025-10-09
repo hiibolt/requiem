@@ -262,7 +262,8 @@ pub fn build_dialogue(pair: Pair<Rule>) -> Result<Vec<Statement>> {
     
     let emotion_statement = match inner_rules.peek() {
         Some(n) if n.as_rule() == Rule::dialogue_emotion_change => {
-            let emotion_pair = inner_rules.next().unwrap();
+            let emotion_pair = inner_rules.next()
+                .context("Expected emotion pair")?;
             let emotion_name_pair = emotion_pair.into_inner().next()
                 .context("Emotion change missing emotion name")?;
             

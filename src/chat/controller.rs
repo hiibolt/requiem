@@ -2,6 +2,7 @@ use crate::{compiler::controller::{Controller, ControllerReadyMessage, TriggerCo
 
 use std::collections::HashMap;
 
+use anyhow::Context;
 use bevy::{asset::{LoadState, LoadedFolder}, color::palettes::css::RED, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, window::PrimaryWindow};
 
 /* Messages */
@@ -139,14 +140,19 @@ fn setup(
     mut game_state: ResMut<VisualNovelState>,
     mut controller_state: ResMut<NextState<ChatControllerState>>,
     mut msg_writer: MessageWriter<ControllerReadyMessage>,
-) {
+) -> Result<(), BevyError> {
     let mut gui_sprites = HashMap::<String, Handle<Image>>::new();
     if let Some(state) = asset_server.get_load_state(folder_handle.0.id()) {
         match state {
             LoadState::Loaded => {
                 if let Some(loaded_folder) = loaded_folders.get(folder_handle.0.id()) {
                     for handle in &loaded_folder.handles {
-                        let filename = handle.path().expect("Error retrieving gui path").path().file_stem().unwrap().to_string_lossy().to_string();
+                        let path = handle.path()
+                            .context("Error retrieving gui path")?;
+                        let filename = path.path().file_stem()
+                            .context("GUI file has no name")?
+                            .to_string_lossy()
+                            .to_string();
                         gui_sprites.insert(filename, handle.clone().typed());
                     }
                 }
@@ -156,11 +162,12 @@ fn setup(
                 msg_writer.write(ControllerReadyMessage(Controller::Chat));
             },
             LoadState::Failed(e) => {
-                panic!("Error loading assets... {}", e.to_string());
+                return Err(anyhow::anyhow!("Error loading GUI assets: {}", e.to_string()).into());
             }
             _ => {}
         }
     }
+    Ok(())
 }
 fn import_gui_sprites(mut commands: Commands, asset_server: Res<AssetServer> ){
     let loaded_folder = asset_server.load_folder("gui");
@@ -251,12 +258,13 @@ fn update_chatbox(
     time: Res<Time>,
     window: Query<&Window, With<PrimaryWindow>>,
     buttons: Res<ButtonInput<MouseButton>>,
-) {
+) -> Result<(), BevyError> {
     /* QUICK USE VARIABLES */
     let mut name_text_option: Option<&mut Text2d> = None;
     let mut info_text_option: Option<&mut Text2d> = None;
     let mut message_text_option: Option<&mut Text2d> = None;
     let mut message_scroll_text_obj_option: Option<&mut GUIScrollText> = None;
+    
     for (text_literal, scroll_text_obj, text_obj) in text_object_query.iter_mut() {
         match text_obj.id.as_str() {
             "_name_text" => name_text_option = Some(text_literal.into_inner()),
@@ -268,10 +276,15 @@ fn update_chatbox(
             _ => {}
         }
     }
-    let name_text = name_text_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'name_text'!");
-    let info_text = info_text_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'info_text'!");
-    let message_text = message_text_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'message_text'!");
-    let message_scroll_text_obj = message_scroll_text_obj_option.expect("MISSING GUISCROLLTEXT OBJECT WITH ID 'message_text'!");
+    
+    let name_text = name_text_option
+        .context("Missing GUI text object with ID '_name_text'")?;
+    let info_text = info_text_option
+        .context("Missing GUI text object with ID '_info_text'")?;
+    let message_text = message_text_option
+        .context("Missing GUI text object with ID '_message_text'")?;
+    let message_scroll_text_obj = message_scroll_text_obj_option
+        .context("Missing GUI scroll text object with ID '_message_text'")?;
 
     let mut textbox_visibility_option: Option<&mut Visibility> = None;
     for (visibility_literal, textbox_obj) in visibility_query.iter_mut() {
@@ -280,7 +293,8 @@ fn update_chatbox(
             _ => {}
         }
     }
-    let textbox_visibility = textbox_visibility_option.expect("MISSING GUI OBJECT WITH ID '_textbox_background'!");
+    let textbox_visibility = textbox_visibility_option
+        .context("Missing GUI object with ID '_textbox_background'")?;
 
     // Tick clock
     let to_tick = if time.delta_secs() > 1. { std::time::Duration::from_secs_f32(0.) } else { time.delta() };
@@ -307,7 +321,7 @@ fn update_chatbox(
 
     // If the textbox is hidden, ignore the next section dedicated to updating it
     if *textbox_visibility == Visibility::Hidden {
-        return;
+        return Ok(());
     }
 
     // Take the original string from the message object
@@ -320,13 +334,9 @@ fn update_chatbox(
     original_string.truncate(length as usize);
     message_text.0 = original_string;
 
-    let window = match window.single() {
-        Ok(window) => window,
-        Err(_) => {
-            eprintln!("Error querying for window");
-            return;
-        }
-    };
+    let window = window.single()
+        .context("Failed to query for primary window")?;
+    
     if let Some(position) = window.cursor_position() {
         let resolution = &window.resolution;
         let textbox_bounds: [f32; 4] = [
@@ -339,7 +349,7 @@ fn update_chatbox(
             if length < message_scroll_text_obj.message.len() as u32 {
                 // Skip message scrolling
                 scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(100000000.));
-                return;
+                return Ok(());
             }
             println!("[ Player finished message ]");
             info_text.0 = String::from("");
@@ -351,7 +361,10 @@ fn update_chatbox(
             game_state.blocking = false;
         }
     }
+    
+    Ok(())
 }
+
 fn wait_trigger(
     mut msg_reader: MessageReader<TriggerControllersMessage>,
     mut controller_state: ResMut<NextState<ChatControllerState>>,
@@ -365,15 +378,16 @@ fn update_gui(
     mut gui_query: Query<(&Object, &mut Sprite)>,
 
     game_state: Res<VisualNovelState>
-) {
+) -> Result<(), BevyError> {
     for ev in change_messages.read() {
         for (gui_obj, mut current_sprite) in gui_query.iter_mut() {
             if gui_obj.id == ev.gui_id {
-                current_sprite.image = game_state.gui_sprites.get(&ev.sprite_id)
-                    .expect("GUI asset '{ev.sprite_id}' does not exist!")
-                    .clone();
+                let gui_sprite = game_state.gui_sprites.get(&ev.sprite_id)
+                    .with_context(|| format!("GUI asset '{}' does not exist", ev.sprite_id))?;
+                current_sprite.image = gui_sprite.clone();
                 println!("[ Set GUI asset '{}' to '{}']", ev.gui_id, ev.sprite_id);
             }
         }
     }
+    Ok(())
 }

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use bevy::asset::{LoadState, LoadedFolder};
 use bevy::prelude::*;
 use bevy::{app::{App, Plugin}, asset::{AssetServer, Handle}};
+use anyhow::Context;
 
 use crate::compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage};
 use crate::{Character, Object};
@@ -50,7 +51,7 @@ fn setup(
     folder_handle: Res<HandleToBackgroundsFolder>,
     mut controller_state: ResMut<NextState<BackgroundControllerState>>,
     mut msg_writer: MessageWriter<ControllerReadyMessage>,
-) {
+) -> Result<(), BevyError> {
     let mut background_sprites: HashMap<String, Handle<Image>>= HashMap::new();
 
     if let Some(state) = asset_server.get_load_state(folder_handle.0.id()) {
@@ -58,8 +59,12 @@ fn setup(
             LoadState::Loaded => {
                 if let Some(loaded_folder) = loaded_folders.get(folder_handle.0.id()) {
                     for handle in &loaded_folder.handles {
-                        let filename = handle.path().expect("Error retrieving background path")
-                            .path().file_stem().unwrap().to_string_lossy().to_string();
+                        let path = handle.path()
+                            .context("Error retrieving background path")?;
+                        let filename = path.path().file_stem()
+                            .context("Background file has no name")?
+                            .to_string_lossy()
+                            .to_string();
                         background_sprites.insert(filename, handle.clone().typed());
                     }
                 }
@@ -78,11 +83,12 @@ fn setup(
                 msg_writer.write(ControllerReadyMessage(Controller::Background));
             },
             LoadState::Failed(e) => {
-                panic!("Error loading assets... {}", e.to_string());
+                return Err(anyhow::anyhow!("Error loading background assets: {}", e.to_string()).into());
             }
             _ => {}
         }
     }
+    Ok(())
 }
 pub fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
     let loaded_folder = asset_server.load_folder("backgrounds");
@@ -103,13 +109,14 @@ pub fn update_background(
     ), (With<Background>, Without<Character>)>,
 
     mut background_change_message: MessageReader<BackgroundChangeMessage>,
-){
+) -> Result<(), BevyError> {
     for msg in background_change_message.read() {
         for (background_obj, mut current_sprite) in background_query.iter_mut() {
-            current_sprite.image = background_obj.background_sprites.get(&msg.background_id)
-                .expect("background does not exist!")
-                .clone();
+            let background_handle = background_obj.background_sprites.get(&msg.background_id)
+                .with_context(|| format!("Background '{}' does not exist", msg.background_id))?;
+            current_sprite.image = background_handle.clone();
             println!("[ Set background to '{}']", msg.background_id);
         }
     }
+    Ok(())
 }

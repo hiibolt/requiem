@@ -76,19 +76,17 @@ pub struct VisualNovelState {
 }
 
 fn error_handler ( err: BevyError, ctx: ErrorContext ) {
-    println!("Error: {err:?}\nContext: {ctx:?}");
-
-    panic!("Stopping due to error.");
+    panic!("Bevy error: {err:?}\nContext: {ctx:?}")
 }
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
-                    title: String::from("Ettethread - Requiem"),
+                    title: String::from("Sabi"),
                     resolution: (1280, 800).into(),
                     present_mode: PresentMode::AutoVsync,
-                    // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
                     prevent_default_event_handling: false,
                     ..default()
                 }),

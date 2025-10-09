@@ -8,7 +8,7 @@ use pest::Parser;
 
 /* States */
 #[derive(States, Debug, Default, Clone, Copy, Hash, Eq, PartialEq)]
-enum RequiemState {
+enum SabiState {
     #[default]
     WaitingForControllers,
     Running,
@@ -40,15 +40,15 @@ pub struct Compiler;
 impl Plugin for Compiler {
     fn build(&self, app: &mut App) {
         app
-            .init_state::<RequiemState>()
+            .init_state::<SabiState>()
             .init_resource::<ControllersReady>()
             .add_message::<ControllerReadyMessage>()
             .add_message::<TriggerControllersMessage>()
             .add_message::<SceneChangeMessage>()
             .add_message::<ActChangeMessage>()
             .add_systems(Startup, parse)
-            .add_systems(Update, check_states.run_if(in_state(RequiemState::WaitingForControllers)))
-            .add_systems(Update, (run, handle_scene_changes, handle_act_changes).run_if(in_state(RequiemState::Running)));
+            .add_systems(Update, check_states.run_if(in_state(SabiState::WaitingForControllers)))
+            .add_systems(Update, (run, handle_scene_changes, handle_act_changes).run_if(in_state(SabiState::Running)));
     }
 }
 
@@ -56,7 +56,7 @@ fn check_states(
     mut msg_controller_reader: MessageReader<ControllerReadyMessage>,
     mut controllers_state: ResMut<ControllersReady>,
     mut msg_writer: MessageWriter<TriggerControllersMessage>,
-    mut requiem_state: ResMut<NextState<RequiemState>>,
+    mut sabi_state: ResMut<NextState<SabiState>>,
 ) {
     for event in msg_controller_reader.read() {
         let controller = match event.0 {
@@ -70,7 +70,7 @@ fn check_states(
        && controllers_state.character_controller
        && controllers_state.chat_controller {
         msg_writer.write(TriggerControllersMessage);
-        requiem_state.set(RequiemState::Running);
+        sabi_state.set(SabiState::Running);
     }
 }
 
@@ -156,6 +156,7 @@ fn parse ( mut game_state: ResMut<VisualNovelState> ) -> Result<(), BevyError> {
     game_state.blocking = false;
     
     info!("Completed pre-compilation successfully - starting with act '{}', scene '{}'", first_act_id, act.entrypoint);
+    
     Ok(())
 }
 
@@ -168,9 +169,9 @@ fn run<'a, 'b, 'c, 'd, 'e, 'f, 'g> (
     mut act_change_message: MessageWriter<'f, ActChangeMessage>,
 
     mut game_state: ResMut<'g, VisualNovelState>,
-) {
+) -> Result<(), BevyError> {
     if game_state.blocking {
-        return;
+        return Ok(());
     }
 
     if let Some(statement) = game_state.statements.next() {
@@ -183,47 +184,52 @@ fn run<'a, 'b, 'c, 'd, 'e, 'f, 'g> (
                 act_change_message: &mut act_change_message,
                 game_state: &mut game_state
             })
-            .expect("...while invoking statement");
+            .context("Failed to invoke statement")?;
     }
+
+    Ok(())
 }
 
 fn handle_scene_changes(
     mut scene_change_messages: MessageReader<SceneChangeMessage>,
     mut game_state: ResMut<VisualNovelState>,
-) {
+) -> Result<(), BevyError> {
     for msg in scene_change_messages.read() {
-        if let Some(new_scene) = game_state.act.scenes.get(&msg.scene_id).cloned() {
-            info!("Changing to scene: {}", msg.scene_id);
-            game_state.scene = new_scene;
-            game_state.statements = game_state.scene.statements.clone().into_iter();
-            game_state.blocking = false;
-            println!("[ Scene changed to '{}' ]", msg.scene_id);
-        } else {
-            error!("Scene '{}' not found in current act!", msg.scene_id);
-        }
+        let new_scene = game_state.act.scenes.get(&msg.scene_id)
+            .with_context(|| format!("Scene '{}' not found in current act", msg.scene_id))?
+            .clone();
+        
+        info!("Changing to scene: {}", msg.scene_id);
+        game_state.scene = new_scene;
+        game_state.statements = game_state.scene.statements.clone().into_iter();
+        game_state.blocking = false;
+        info!("[ Scene changed to '{}' ]", msg.scene_id);
     }
+
+    Ok(())
 }
 
 fn handle_act_changes(
     mut act_change_messages: MessageReader<ActChangeMessage>,
     mut game_state: ResMut<VisualNovelState>,
-) {
+) -> Result<(), BevyError> {
     for msg in act_change_messages.read() {
-        if let Some(new_act) = game_state.acts.get(&msg.act_id).cloned() {
-            info!("Changing to act: {}", msg.act_id);
-            
-            // Use the entrypoint scene from the new act
-            if let Some(entrypoint_scene) = new_act.scenes.get(&new_act.entrypoint).cloned() {
-                game_state.act = new_act.clone();
-                game_state.scene = entrypoint_scene;
-                game_state.statements = game_state.scene.statements.clone().into_iter();
-                game_state.blocking = false;
-                println!("[ Act changed to '{}', starting at entrypoint scene '{}' ]", msg.act_id, new_act.entrypoint);
-            } else {
-                error!("Entrypoint scene '{}' not found in act '{}'", new_act.entrypoint, msg.act_id);
-            }
-        } else {
-            error!("Act '{}' not found!", msg.act_id);
-        }
+        let new_act = game_state.acts.get(&msg.act_id)
+            .with_context(|| format!("Act '{}' not found", msg.act_id))?
+            .clone();
+        
+        info!("Changing to act: {}", msg.act_id);
+        
+        let entrypoint_scene = new_act.scenes.get(&new_act.entrypoint)
+            .with_context(|| format!("Entrypoint scene '{}' not found in act '{}'", new_act.entrypoint, msg.act_id))?
+            .clone();
+        
+        game_state.act = new_act.clone();
+        game_state.scene = entrypoint_scene;
+        game_state.statements = game_state.scene.statements.clone().into_iter();
+        game_state.blocking = false;
+        info!("[ Act changed to '{}', starting at entrypoint scene '{}' ]", msg.act_id, new_act.entrypoint);
     }
+    
+    Ok(())
 }
