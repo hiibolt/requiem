@@ -118,7 +118,13 @@ fn define_characters_map(
 
             characters_sprites.insert(key, handle.clone().typed());
         } else if path.iter().count() == 3 {
-            characters_configs.insert(name, config_res.get(&handle.clone().typed::<CharacterConfig>()).unwrap().clone());
+            characters_configs.insert(
+                name,
+                config_res
+                    .get(&handle.clone().typed::<CharacterConfig>())
+                    .context(format!("Failed to retrieve CharacterConfig for '{}'", name))?
+                    .clone(),
+            );
         }
     }
     commands.insert_resource(CharactersResource(characters_sprites));
