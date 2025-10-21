@@ -1,9 +1,10 @@
 SCENE intro
     (GUI textbox changes to "TEXTBOX_NASTYA")
     (Background changes to "main_classroom_noon")
+    (Nayu appears concerned)
     MC: "Welcome to the new scene system!"
     Nayu: (neutral) "This is the intro scene."
-    
+
     (Scene "main" begins)
 CURTAIN
 
@@ -12,6 +13,22 @@ SCENE main
     MC: "This is the main scene!"
     Nayu: (happy) "You can now switch between scenes easily."
 
+    (Nayu disappears)
+    (Scene "charactertest" begins)
+CURTAIN
+
+SCENE charactertest
+    MC: "We are making some tests on character handling!"
+    (Nayu appears)
+    Nayu: "I just appeared with my default emotion, which is neutral :|"
+    Nayu: (happy) "But this seems to be working, so it is good"
+    (Nayu disappears)
+    Nayu: "I disappeared"
+    Nayu: (sad) "From now on, until I reappear, emotion changes will not be displayed nor applied :("
+    (Nayu fade in)
+    Nayu: "I just learned how to fade in into the scene and: guess what?"
+    (Nayu fade out)
+    
     (Scene "epilogue" begins)
 CURTAIN
 
