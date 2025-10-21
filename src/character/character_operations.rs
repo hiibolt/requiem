@@ -9,13 +9,13 @@ pub fn change_character_emotion(
     sprites: &Res<CharactersResource>,
     emotion: &str,
     config: &CharacterConfig
-) {
+) -> Result<(), BevyError> {
    let sprite_key = SpriteKey {
        character: config.name.clone(),
        outfit: config.outfit.clone(),
        emotion: emotion.to_owned()
    };
-   let image = sprites.0.get(&sprite_key).expect(&format!("Sprite not found for {:?}", sprite_key));
+   let image = sprites.0.get(&sprite_key).with_context(|| format!("Sprite not found for {:?}", sprite_key))?;
    sprite.image = image.clone();
 }
 pub fn apply_alpha(

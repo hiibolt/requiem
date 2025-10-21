@@ -119,7 +119,7 @@ fn define_characters_map(
             characters_sprites.insert(key, handle.clone().typed());
         } else if path.iter().count() == 3 {
             characters_configs.insert(
-                name,
+                name.clone(),
                 config_res
                     .get(&handle.clone().typed::<CharacterConfig>())
                     .context(format!("Failed to retrieve CharacterConfig for '{}'", name))?
