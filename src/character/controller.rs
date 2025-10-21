@@ -212,7 +212,6 @@ fn update_characters(
                         warn!(warn_message);
                         return Ok(());
                     }
-                    // None => return Err(anyhow::anyhow!("Character {} not found in the World!", character_config.name))?
                 };
                 change_character_emotion(&mut entity.2, &sprites, emotion, character_config);
             },
