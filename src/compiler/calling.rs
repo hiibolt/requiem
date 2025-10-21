@@ -17,7 +17,6 @@ pub struct ActChangeMessage {
 pub struct InvokeContext<'l, 'a, 'b, 'd, 'e, 'f, 'g, 'h> {
     pub game_state: &'l mut ResMut<'a, VisualNovelState>,
     pub character_say_message: &'l mut MessageWriter<'b, CharacterSayMessage>,
-    // pub emotion_change_message: &'l mut MessageWriter<'c, EmotionChangeMessage>,
     pub background_change_message: &'l mut MessageWriter<'d, BackgroundChangeMessage>,
     pub gui_change_message: &'l mut MessageWriter<'e, GUIChangeMessage>,
     pub scene_change_message: &'l mut MessageWriter<'f, SceneChangeMessage>,
