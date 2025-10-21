@@ -15,7 +15,7 @@ pub fn change_character_emotion(
        outfit: config.outfit.clone(),
        emotion: emotion.to_owned()
    };
-   let image = sprites.0.get(&sprite_key).expect("Sprite not found!".into());
+   let image = sprites.0.get(&sprite_key).expect(&format!("Sprite not found for {:?}", sprite_key));
    sprite.image = image.clone();
 }
 pub fn apply_alpha(
