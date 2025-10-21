@@ -1,4 +1,4 @@
-use crate::{BackgroundChangeMessage, CharacterSayMessage, EmotionChangeMessage, GUIChangeMessage, VisualNovelState};
+use crate::{BackgroundChangeMessage, CharacterSayMessage, GUIChangeMessage, CharacterChangeMessage, VisualNovelState};
 use crate::compiler::ast::{CodeStatement, Dialogue, Evaluate, StageCommand, Statement};
 use bevy::prelude::*;
 use anyhow::{Context, Result};
@@ -14,14 +14,15 @@ pub struct ActChangeMessage {
     pub act_id: String
 }
 
-pub struct InvokeContext<'l, 'a, 'b, 'c, 'd, 'e, 'f, 'g> {
-    pub character_say_message: &'l mut MessageWriter<'a, CharacterSayMessage>,
-    pub emotion_change_message: &'l mut MessageWriter<'b, EmotionChangeMessage>,
-    pub background_change_message: &'l mut MessageWriter<'c, BackgroundChangeMessage>,
-    pub gui_change_message: &'l mut MessageWriter<'d, GUIChangeMessage>,
-    pub scene_change_message: &'l mut MessageWriter<'e, SceneChangeMessage>,
-    pub act_change_message: &'l mut MessageWriter<'f, ActChangeMessage>,
-    pub game_state: &'l mut ResMut<'g, VisualNovelState>
+pub struct InvokeContext<'l, 'a, 'b, 'd, 'e, 'f, 'g, 'h> {
+    pub game_state: &'l mut ResMut<'a, VisualNovelState>,
+    pub character_say_message: &'l mut MessageWriter<'b, CharacterSayMessage>,
+    // pub emotion_change_message: &'l mut MessageWriter<'c, EmotionChangeMessage>,
+    pub background_change_message: &'l mut MessageWriter<'d, BackgroundChangeMessage>,
+    pub gui_change_message: &'l mut MessageWriter<'e, GUIChangeMessage>,
+    pub scene_change_message: &'l mut MessageWriter<'f, SceneChangeMessage>,
+    pub act_change_message: &'l mut MessageWriter<'g, ActChangeMessage>,
+    pub character_change_message: &'l mut MessageWriter<'h, CharacterChangeMessage>,
 }
 pub trait Invoke {
     fn invoke ( &self, ctx: InvokeContext ) -> Result<()>;
@@ -53,17 +54,6 @@ impl Invoke for StageCommand {
                 ctx.background_change_message.write(BackgroundChangeMessage {
                     background_id
                 });
-
-                Ok(())
-            },
-            StageCommand::EmotionChange { character, emotion } => {
-                info!("Invoking StageCommand::EmotionChange to {}'s {}", character, emotion);
-                ctx.emotion_change_message.write(EmotionChangeMessage {
-                    name: character.to_owned(),
-                    emotion: emotion.to_owned()
-                });
-
-                Ok(())
             },
             StageCommand::GUIChange { id_expr, sprite_expr } => {
                 let gui_id = id_expr.evaluate_into_string()
@@ -76,8 +66,6 @@ impl Invoke for StageCommand {
                     gui_id,
                     sprite_id
                 });
-
-                Ok(())
             },
             StageCommand::SceneChange { scene_expr } => {
                 let scene_id = scene_expr.evaluate_into_string()
@@ -87,8 +75,6 @@ impl Invoke for StageCommand {
                 ctx.scene_change_message.write(SceneChangeMessage {
                     scene_id
                 });
-
-                Ok(())
             },
             StageCommand::ActChange { act_expr } => {
                 let act_id = act_expr.evaluate_into_string()
@@ -98,10 +84,21 @@ impl Invoke for StageCommand {
                 ctx.act_change_message.write(ActChangeMessage {
                     act_id
                 });
-
-                Ok(())
+            },
+            StageCommand::CharacterChange { character, operation } => {
+                info!("Invoking StageCommand::CharacterChange to {} of type {:?}", character, operation);
+                let message = CharacterChangeMessage {
+                    character: character.clone(),
+                    operation: operation.clone()
+                };
+                if message.is_blocking() {
+                    ctx.game_state.blocking = true;
+                }
+                ctx.character_change_message.write(message);
             }
         }
+        
+        Ok(())
     }
 }
 impl Invoke for CodeStatement {

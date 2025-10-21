@@ -31,7 +31,7 @@ pub enum CharacterJsonError {
 #[derive(Default)]
 pub struct CharacterJsonLoader;
 impl AssetLoader for CharacterJsonLoader {
-    type Asset = Character;
+    type Asset = CharacterConfig;
     type Settings = ();
     type Error = CharacterJsonError;
 
@@ -44,7 +44,7 @@ impl AssetLoader for CharacterJsonLoader {
         Box::pin(async move {
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).await?;
-            let parsed: Character = serde_json::from_slice(&bytes)?;
+            let parsed: CharacterConfig = serde_json::from_slice(&bytes)?;
             Ok(parsed)
         })
     }
@@ -94,7 +94,7 @@ fn main() {
                 })
         )
         .init_resource::<VisualNovelState>()
-        .init_asset::<Character>()
+        .init_asset::<CharacterConfig>()
         .init_asset_loader::<CharacterJsonLoader>()
         .set_error_handler(error_handler)
         .add_systems(Startup, setup)

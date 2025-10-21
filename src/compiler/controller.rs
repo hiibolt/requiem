@@ -1,5 +1,6 @@
+use crate::character::CharacterChangeMessage;
 use crate::compiler::calling::{Invoke, InvokeContext, SceneChangeMessage, ActChangeMessage};
-use crate::{BackgroundChangeMessage, CharacterSayMessage, EmotionChangeMessage, GUIChangeMessage, VisualNovelState};
+use crate::{BackgroundChangeMessage, CharacterSayMessage, GUIChangeMessage, VisualNovelState};
 use crate::compiler::ast::{build_scenes, Acts, Rule, SabiParser};
 use std::path::PathBuf;
 use bevy::prelude::*;
@@ -33,8 +34,6 @@ pub enum Controller {
     Character,
     Chat,
 }
-
-
 
 pub struct Compiler;
 impl Plugin for Compiler {
@@ -161,14 +160,15 @@ fn parse ( mut game_state: ResMut<VisualNovelState> ) -> Result<(), BevyError> {
 }
 
 fn run<'a, 'b, 'c, 'd, 'e, 'f, 'g> (
-    mut character_say_message: MessageWriter<'a, CharacterSayMessage>,
-    mut emotion_change_message: MessageWriter<'b, EmotionChangeMessage>,
+    mut game_state: ResMut<'a, VisualNovelState>,
+    
+    mut character_say_message: MessageWriter<'b, CharacterSayMessage>,
     mut background_change_message: MessageWriter<'c, BackgroundChangeMessage>,
     mut gui_change_message: MessageWriter<'d, GUIChangeMessage>,
     mut scene_change_message: MessageWriter<'e, SceneChangeMessage>,
     mut act_change_message: MessageWriter<'f, ActChangeMessage>,
+    mut character_change_message: MessageWriter<'g, CharacterChangeMessage>,
 
-    mut game_state: ResMut<'g, VisualNovelState>,
 ) -> Result<(), BevyError> {
     if game_state.blocking {
         return Ok(());
@@ -176,13 +176,13 @@ fn run<'a, 'b, 'c, 'd, 'e, 'f, 'g> (
 
     if let Some(statement) = game_state.statements.next() {
         statement.invoke(InvokeContext {
+                game_state: &mut game_state,
                 character_say_message: &mut character_say_message,
-                emotion_change_message: &mut emotion_change_message,
                 background_change_message: &mut background_change_message,
                 gui_change_message: &mut gui_change_message,
                 scene_change_message: &mut scene_change_message,
                 act_change_message: &mut act_change_message,
-                game_state: &mut game_state
+                character_change_message: &mut character_change_message,
             })
             .context("Failed to invoke statement")?;
     }

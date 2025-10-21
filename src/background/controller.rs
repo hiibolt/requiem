@@ -6,7 +6,7 @@ use bevy::{app::{App, Plugin}, asset::{AssetServer, Handle}};
 use anyhow::Context;
 
 use crate::compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage};
-use crate::{Character, Object};
+use crate::{CharacterConfig, Object};
 
 /* States */
 #[derive(States, Debug, Default, Clone, Copy, Hash, Eq, PartialEq)]
@@ -106,7 +106,7 @@ pub fn update_background(
     mut background_query: Query<(
         &Background,
         &mut Sprite
-    ), (With<Background>, Without<Character>)>,
+    ), (With<Background>, Without<CharacterConfig>)>,
 
     mut background_change_message: MessageReader<BackgroundChangeMessage>,
 ) -> Result<(), BevyError> {

@@ -4,6 +4,8 @@ use pest::{iterators::Pair, pratt_parser::PrattParser};
 use pest_derive::Parser;
 use anyhow::{bail, ensure, Context, Result};
 
+use crate::character::CharacterOperation;
+
 #[derive(Parser)]
 #[grammar = "../sabi.pest"]
 pub struct SabiParser;
@@ -98,9 +100,9 @@ pub enum CodeStatement {
 pub enum StageCommand {
     BackgroundChange { background_expr: Box<Expr> },
     GUIChange { id_expr: Box<Expr>, sprite_expr: Box<Expr> },
-    EmotionChange { character: String, emotion: String },
     SceneChange { scene_expr: Box<Expr> },
-    ActChange { act_expr: Box<Expr> }
+    ActChange { act_expr: Box<Expr> },
+    CharacterChange { character: String, operation: CharacterOperation },
 }
 
 #[derive(Debug, Clone)]
@@ -189,23 +191,6 @@ pub fn build_stage_command(pair: Pair<Rule>) -> Result<Statement> {
                 sprite_expr: Box::new(sprite_expr) 
             }
         },
-        Rule::emotion_change => {
-            let mut inner = command_pair.into_inner();
-            let character_name_pair = inner.next()
-                .context("Emotion change missing character name")?;
-            let emotion_name_pair = inner.next()
-                .context("Emotion change missing emotion name")?;
-            
-            ensure!(character_name_pair.as_rule() == Rule::character_name, 
-                "Expected character name, found {:?}", character_name_pair.as_rule());
-            ensure!(emotion_name_pair.as_rule() == Rule::emotion_name, 
-                "Expected emotion name, found {:?}", emotion_name_pair.as_rule());
-            
-            StageCommand::EmotionChange { 
-                character: character_name_pair.as_str().to_owned(), 
-                emotion: emotion_name_pair.as_str().to_owned() 
-            }
-        },
         Rule::scene_change => {
             let expr_pair = command_pair.into_inner().next()
                 .context("Scene change missing expression")?;
@@ -219,6 +204,38 @@ pub fn build_stage_command(pair: Pair<Rule>) -> Result<Statement> {
             let expr = build_expression(expr_pair)
                 .context("Failed to build expression for act change")?;
             StageCommand::ActChange { act_expr: Box::new(expr) }
+        },
+        Rule::character_change => {
+            let mut inner_rules = command_pair.into_inner().peekable();
+            let character = inner_rules.next()
+                .context("Character change missing character identifier")?
+                .as_str()
+                .to_owned();
+            let action = inner_rules.next()
+                .context("Character change missing character action")?
+                .as_str()
+                .to_owned();
+            match action.as_str() {
+                "appears" | "fade in" => {
+                    let fading = action.as_str() == "fade in";
+                    let operation = match inner_rules.peek() {
+                        Some(n) if n.as_rule() == Rule::emotion_name => {
+                            let emotion_pair = inner_rules.next()
+                                .context("Expected emotion pair")?;
+                            
+                            ensure!(emotion_pair.as_rule() == Rule::emotion_name,
+                                "Expected emotion name, found {:?}", emotion_pair.as_rule());
+                            CharacterOperation::Spawn(Some(emotion_pair.as_str().to_owned()), fading)
+                        },
+                        _ => CharacterOperation::Spawn(None, fading)
+                    };
+                    StageCommand::CharacterChange { character, operation }
+                },
+                "disappears" | "fade out" => {
+                    StageCommand::CharacterChange { character, operation: CharacterOperation::Despawn(action.as_str() == "fade out") }
+                },
+                other => bail!("Unexpected action in Character Change command: {:?}", other)
+            }
         },
         other => bail!("Unexpected rule in stage command: {:?}", other)
     };
@@ -270,9 +287,9 @@ pub fn build_dialogue(pair: Pair<Rule>) -> Result<Vec<Statement>> {
             ensure!(emotion_name_pair.as_rule() == Rule::emotion_name, 
                 "Expected emotion name, found {:?}", emotion_name_pair.as_rule());
             
-            Some(Statement::Stage(StageCommand::EmotionChange { 
+            Some(Statement::Stage(StageCommand::CharacterChange { 
                 character: character.clone(), 
-                emotion: emotion_name_pair.as_str().to_owned() 
+                operation: CharacterOperation::EmotionChange(emotion_name_pair.as_str().to_owned())
             }))
         },
         _ => None
