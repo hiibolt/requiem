@@ -61,10 +61,6 @@ fn spawn_ui_root(
         Node {
             width: Val::Percent(100.),
             height: Val::Percent(100.),
-            justify_items: JustifyItems::Center,
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            align_content: AlignContent::Center,
             ..default()
         },
         GlobalTransform::default(),
