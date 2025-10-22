@@ -200,7 +200,6 @@ fn spawn_chatbox(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     ui_root: Single<Entity, With<UiRoot>>,
-    ui_surface: Res<&bevy_ui::layout::UiSurface>,
 ){
     // Spawn Backplate + Nameplate
     let container = commands.spawn((
@@ -267,7 +266,6 @@ fn spawn_chatbox(
             MessageText
         ));
     });
-    print_ui_layout_tree();
 
     // commands.spawn((
     //     TextBundle::new(
