@@ -1,4 +1,5 @@
 use std::ops::Index;
+use anyhow::Context;
 
 use bevy::prelude::*;
 
@@ -17,6 +18,8 @@ pub fn change_character_emotion(
    };
    let image = sprites.0.get(&sprite_key).with_context(|| format!("Sprite not found for {:?}", sprite_key))?;
    sprite.image = image.clone();
+   
+   Ok(())
 }
 pub fn apply_alpha(
     mut commands: Commands,

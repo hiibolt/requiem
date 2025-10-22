@@ -5,8 +5,7 @@ use bevy::prelude::*;
 use bevy::{app::{App, Plugin}, asset::{AssetServer, Handle}};
 use anyhow::Context;
 
-use crate::compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage};
-use crate::{CharacterConfig, Object};
+use crate::compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage, UiRoot};
 
 /* States */
 #[derive(States, Debug, Default, Clone, Copy, Hash, Eq, PartialEq)]
@@ -19,13 +18,13 @@ enum BackgroundControllerState {
 
 /* Components */
 #[derive(Component)]
-pub struct Background {
-    pub background_sprites: HashMap::<String, Handle<Image>>
-}
+pub struct BackgroundNode;
 
 /* Resources */
 #[derive(Resource)]
 struct HandleToBackgroundsFolder(Handle<LoadedFolder>);
+#[derive(Resource)]
+pub struct BackgroundImages(HashMap::<String, Handle<Image>>);
 
 /* Messages */
 #[derive(Message)]
@@ -49,6 +48,7 @@ fn setup(
     asset_server: Res<AssetServer>,
     loaded_folders: Res<Assets<LoadedFolder>>,
     folder_handle: Res<HandleToBackgroundsFolder>,
+    ui_root: Option<Single<Entity, With<UiRoot>>>,
     mut controller_state: ResMut<NextState<BackgroundControllerState>>,
     mut msg_writer: MessageWriter<ControllerReadyMessage>,
 ) -> Result<(), BevyError> {
@@ -67,17 +67,23 @@ fn setup(
                             .to_string();
                         background_sprites.insert(filename, handle.clone().typed());
                     }
+                    commands.insert_resource(BackgroundImages(background_sprites));
                 }
 
                 /* Background Setup */
-                commands.spawn((
-                    Object {
-                        id: String::from("_primary")
+                let ui_root = ui_root.with_context(|| "Cannot find UiRoot node in the World")?;
+                commands.entity(ui_root.entity()).with_child((
+                    ImageNode {
+                        // image_mode: NodeImageMode::Stretch,
+                        ..default()
                     },
-                    Background {
-                        background_sprites,
+                    Node {
+                        width: Val::Percent(100.),
+                        height: Val::Percent(100.),
+                        ..default()
                     },
-                    Sprite::default()
+                    Transform::default(),
+                    BackgroundNode,
                 ));
                 controller_state.set(BackgroundControllerState::Idle);
                 msg_writer.write(ControllerReadyMessage(Controller::Background));
@@ -103,20 +109,15 @@ fn wait_trigger(
     }
 }
 pub fn update_background(
-    mut background_query: Query<(
-        &Background,
-        &mut Sprite
-    ), (With<Background>, Without<CharacterConfig>)>,
-
     mut background_change_message: MessageReader<BackgroundChangeMessage>,
+    background_images: Res<BackgroundImages>,
+    mut background_query: Single<&mut ImageNode, With<BackgroundNode>>,
 ) -> Result<(), BevyError> {
     for msg in background_change_message.read() {
-        for (background_obj, mut current_sprite) in background_query.iter_mut() {
-            let background_handle = background_obj.background_sprites.get(&msg.background_id)
-                .with_context(|| format!("Background '{}' does not exist", msg.background_id))?;
-            current_sprite.image = background_handle.clone();
-            println!("[ Set background to '{}']", msg.background_id);
-        }
+        let background_handle = background_images.0.get(&msg.background_id)
+            .with_context(|| format!("Background '{}' does not exist", msg.background_id))?;
+        background_query.image = background_handle.clone();
+        println!("[ Set background to '{}']", msg.background_id);
     }
     Ok(())
 }

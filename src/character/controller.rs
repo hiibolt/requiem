@@ -213,7 +213,7 @@ fn update_characters(
                         return Ok(());
                     }
                 };
-                change_character_emotion(&mut entity.2, &sprites, emotion, character_config);
+                change_character_emotion(&mut entity.2, &sprites, emotion, character_config)?;
             },
             CharacterOperation::Despawn(fading) => {
                 if *fading {
