@@ -1,9 +1,9 @@
-use crate::{compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage}, Object, VisualNovelState};
+use crate::{compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage, UiRoot}, Object, VisualNovelState};
 
 use std::collections::HashMap;
 
 use anyhow::Context;
-use bevy::{asset::{LoadState, LoadedFolder}, color::palettes::css::RED, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, window::PrimaryWindow};
+use bevy::{asset::{LoadState, LoadedFolder}, color::palettes::css::RED, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, ui::{debug::print_ui_layout_tree, ui_layout_system, RelativeCursorPosition}, window::PrimaryWindow};
 
 /* Messages */
 #[derive(Message)]
@@ -13,7 +13,7 @@ pub struct CharacterSayMessage {
 }
 #[derive(Message)]
 pub struct GUIChangeMessage {
-    pub gui_id: String,
+    pub gui_target: GuiChangeTarget,
     pub sprite_id: String
 }
 
@@ -31,14 +31,32 @@ enum ChatControllerState {
 pub struct GUIScrollText {
     pub message: String
 }
+#[derive(Component)]
+struct TextBoxBackground;
+#[derive(Component)]
+struct NameBoxBackground;
+#[derive(Component)]
+struct NameText;
+#[derive(Component)]
+struct MessageText;
+#[derive(Component)]
+struct InfoText;
 
 /* Resources */
 #[derive(Resource)]
 pub struct ChatScrollStopwatch(Stopwatch);
 #[derive(Resource)]
 struct HandleToGuiFolder(Handle<LoadedFolder>);
+#[derive(Resource)]
+struct GuiImages(HashMap<String, Handle<Image>>);
 
 /* Custom types */
+#[derive(Debug, Clone)]
+pub enum GuiChangeTarget {
+    TextBoxBackground,
+    NameBoxBackground,
+}
+
 #[derive(Bundle)]
 struct TextBundle {
     object: Object,
@@ -130,14 +148,19 @@ impl Plugin for ChatController {
             .add_message::<GUIChangeMessage>()
             .add_systems(Update, wait_trigger.run_if(in_state(ChatControllerState::Idle)))
             .add_systems(OnEnter(ChatControllerState::Running), spawn_chatbox)
-            .add_systems(Update, (update_chatbox, update_gui).run_if(in_state(ChatControllerState::Running)));
+            .add_systems(Update, (update_chatbox, handle_click, update_gui).run_if(in_state(ChatControllerState::Running)));
     }
 }
+fn handle_click(
+    relative_cursor: Single<&RelativeCursorPosition>
+) {
+    info!("HANDLE CLICK {}", relative_cursor.cursor_over());
+}
 fn setup(
+    mut commands: Commands,
     asset_server: Res<AssetServer>,
     loaded_folders: Res<Assets<LoadedFolder>>,
     folder_handle: Res<HandleToGuiFolder>,
-    mut game_state: ResMut<VisualNovelState>,
     mut controller_state: ResMut<NextState<ChatControllerState>>,
     mut msg_writer: MessageWriter<ControllerReadyMessage>,
 ) -> Result<(), BevyError> {
@@ -157,7 +180,7 @@ fn setup(
                     }
                 }
 
-                game_state.gui_sprites = gui_sprites;
+                commands.insert_resource(GuiImages(gui_sprites));
                 controller_state.set(ChatControllerState::Idle);
                 msg_writer.write(ControllerReadyMessage(Controller::Chat));
             },
@@ -173,26 +196,37 @@ fn import_gui_sprites(mut commands: Commands, asset_server: Res<AssetServer> ){
     let loaded_folder = asset_server.load_folder("gui");
     commands.insert_resource(HandleToGuiFolder(loaded_folder));
 }
-fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
+fn spawn_chatbox(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    ui_root: Single<Entity, With<UiRoot>>,
+    ui_surface: Res<&bevy_ui::layout::UiSurface>,
+){
     // Spawn Backplate + Nameplate
-    commands.spawn((
-        Object {
-            id: String::from("_textbox_background")
+    let container = commands.spawn((
+        Node {
+            width: Val::Percent(70.),
+            height: Val::Percent(20.),
+            display: Display::Flex,
+            flex_direction: FlexDirection::Column,
+            ..default()
         },
-        Visibility::Hidden,
-        Sprite::default(),
-        Transform::from_xyz(0., -275., 2.),
-    ))
-    .with_children(|parent| {
+        ZIndex(3),
+    )).id();
+    
+    commands.entity(ui_root.entity()).add_child(container);
+    
+    commands.entity(container).with_children(|parent| {
         parent.spawn((
-            Object {
-                id: String::from("_namebox_background")
+            ImageNode::default(),
+            Node {
+                height: Val::Percent(15.),
+                ..default()
             },
             Visibility::Inherited,
-            Sprite::default(),
-            Transform::from_xyz(-270., 105., 2.).with_scale( Vec3 { x: 0.75, y: 0.75, z: 2. } ),
-        ));
-        parent.spawn(
+            ZIndex(3),
+            NameBoxBackground,
+        )).with_child((
             TextBundle::new(
                 Object {
                     id: String::from("_name_text")
@@ -203,11 +237,22 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                            font: asset_server.load("fonts/ALLER.ttf"),
                            font_size: 40.0,
                            ..default()
-                       })
-            .with_anchor(Anchor::TOP_LEFT)
-            .with_transform(Transform::from_xyz(-305., 126., 3.))
-        );
-        parent.spawn(
+                       }),
+            NameText
+        ));
+        parent.spawn((
+            ImageNode {
+                ..default()
+            },
+            Node {
+                width: Val::Percent(100.),
+                ..default()
+            },
+            ZIndex(2),
+            Visibility::Visible,
+            RelativeCursorPosition::default(),
+            TextBoxBackground,
+        )).with_child((
             TextBundle::new(
                 Object {
                     id: String::from("_message_text")
@@ -218,57 +263,56 @@ fn spawn_chatbox(mut commands: Commands, asset_server: Res<AssetServer>){
                            font: asset_server.load("fonts/BOLDITALIC.ttf"),
                            font_size: 27.0,
                            ..default()
-                       })
-            .with_anchor(Anchor::TOP_LEFT)
-            .with_transform(Transform::from_xyz(-350., 62., 3.))
-            .with_bounds(TextBounds { width: Some(700.), height: Some(107.) }));
+                       }),
+            MessageText
+        ));
     });
+    print_ui_layout_tree();
 
-    commands.spawn(
-        TextBundle::new(
-            Object {
-                id: String::from("_info_text")
-            },
-            "",
-        )
-        .with_font(TextFont {
-                       font: asset_server.load("fonts/BOLD.ttf"),
-                       font_size: 50.,
-                       ..default()
-                   })
-        .with_anchor(Anchor::TOP_CENTER)
-        .with_layout(TextLayout {
-                         justify: Justify::Center,
-                         linebreak: LineBreak::WordBoundary,
-                     })
-        .with_color(TextColor(Color::Srgba(RED)))
-        .with_transform(Transform::from_xyz(0., 302., 3.))
-        .with_visibility(Visibility::Visible)
-        .with_bounds(TextBounds { width: Some(700.), height: None })
-    );
+    // commands.spawn((
+    //     TextBundle::new(
+    //         Object {
+    //             id: String::from("_info_text")
+    //         },
+    //         "",
+    //     )
+    //     .with_font(TextFont {
+    //                    font: asset_server.load("fonts/BOLD.ttf"),
+    //                    font_size: 50.,
+    //                    ..default()
+    //                })
+    //     .with_anchor(Anchor::TOP_CENTER)
+    //     .with_layout(TextLayout {
+    //                      justify: Justify::Center,
+    //                      linebreak: LineBreak::WordBoundary,
+    //                  })
+    //     .with_color(TextColor(Color::Srgba(RED)))
+    //     .with_transform(Transform::from_xyz(0., 302., 3.))
+    //     .with_visibility(Visibility::Visible)
+    //     .with_bounds(TextBounds { width: Some(700.), height: None }),
+    //     InfoText
+    // ));
 }
 fn update_chatbox(
     mut event_message: MessageReader<CharacterSayMessage>,
-    mut visibility_query: Query<(&mut Visibility, &Object)>,
+    textbox_bg_visibility: Single<&mut Visibility, With<TextBoxBackground>>,
     mut text_object_query: Query<(&mut Text2d, &mut GUIScrollText, &Object)>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
-
     mut game_state: ResMut<VisualNovelState>,
-
     time: Res<Time>,
     window: Query<&Window, With<PrimaryWindow>>,
     buttons: Res<ButtonInput<MouseButton>>,
 ) -> Result<(), BevyError> {
     /* QUICK USE VARIABLES */
     let mut name_text_option: Option<&mut Text2d> = None;
-    let mut info_text_option: Option<&mut Text2d> = None;
+    // let mut info_text_option: Option<&mut Text2d> = None;
     let mut message_text_option: Option<&mut Text2d> = None;
     let mut message_scroll_text_obj_option: Option<&mut GUIScrollText> = None;
     
     for (text_literal, scroll_text_obj, text_obj) in text_object_query.iter_mut() {
         match text_obj.id.as_str() {
             "_name_text" => name_text_option = Some(text_literal.into_inner()),
-            "_info_text" => info_text_option = Some(text_literal.into_inner()),
+            // "_info_text" => info_text_option = Some(text_literal.into_inner()),
             "_message_text" => {
                 message_text_option = Some(text_literal.into_inner());
                 message_scroll_text_obj_option = Some(scroll_text_obj.into_inner());
@@ -279,33 +323,24 @@ fn update_chatbox(
     
     let name_text = name_text_option
         .context("Missing GUI text object with ID '_name_text'")?;
-    let info_text = info_text_option
-        .context("Missing GUI text object with ID '_info_text'")?;
+    // let info_text = info_text_option
+        // .context("Missing GUI text object with ID '_info_text'")?;
     let message_text = message_text_option
         .context("Missing GUI text object with ID '_message_text'")?;
     let message_scroll_text_obj = message_scroll_text_obj_option
         .context("Missing GUI scroll text object with ID '_message_text'")?;
 
-    let mut textbox_visibility_option: Option<&mut Visibility> = None;
-    for (visibility_literal, textbox_obj) in visibility_query.iter_mut() {
-        match textbox_obj.id.as_str() {
-            "_textbox_background" => textbox_visibility_option = Some(visibility_literal.into_inner()),
-            _ => {}
-        }
-    }
-    let textbox_visibility = textbox_visibility_option
-        .context("Missing GUI object with ID '_textbox_background'")?;
-
     // Tick clock
     let to_tick = if time.delta_secs() > 1. { std::time::Duration::from_secs_f32(0.) } else { time.delta() };
     scroll_stopwatch.0.tick(to_tick);
+    let mut textbox_bg_visibility = textbox_bg_visibility.into_inner();
 
     /* STANDARD SAY EVENTS INITIALIZATION [Transition::Say] */
     for ev in event_message.read() {
         game_state.blocking = true;
 
         // Make the parent textbox visible
-        *textbox_visibility = Visibility::Visible;
+        *textbox_bg_visibility = Visibility::Visible;
 
         // Reset the scrolling timer
         scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(0.));
@@ -320,7 +355,7 @@ fn update_chatbox(
     }
 
     // If the textbox is hidden, ignore the next section dedicated to updating it
-    if *textbox_visibility == Visibility::Hidden {
+    if *textbox_bg_visibility == Visibility::Hidden {
         return Ok(());
     }
 
@@ -352,10 +387,10 @@ fn update_chatbox(
                 return Ok(());
             }
             println!("[ Player finished message ]");
-            info_text.0 = String::from("");
+            // info_text.0 = String::from("");
 
             // Hide textbox parent object
-            *textbox_visibility = Visibility::Hidden;
+            *textbox_bg_visibility = Visibility::Hidden;
 
             // Allow transitions to be run again
             game_state.blocking = false;
@@ -375,19 +410,21 @@ fn wait_trigger(
 }
 fn update_gui(
     mut change_messages: MessageReader<GUIChangeMessage>,
-    mut gui_query: Query<(&Object, &mut Sprite)>,
-
-    game_state: Res<VisualNovelState>
+    mut param_set: ParamSet<(
+        Single<&mut ImageNode, With<TextBoxBackground>>,
+        Single<&mut ImageNode, With<NameBoxBackground>>,
+    )>,
+    gui_images: Res<GuiImages>,
 ) -> Result<(), BevyError> {
     for ev in change_messages.read() {
-        for (gui_obj, mut current_sprite) in gui_query.iter_mut() {
-            if gui_obj.id == ev.gui_id {
-                let gui_sprite = game_state.gui_sprites.get(&ev.sprite_id)
-                    .with_context(|| format!("GUI asset '{}' does not exist", ev.sprite_id))?;
-                current_sprite.image = gui_sprite.clone();
-                println!("[ Set GUI asset '{}' to '{}']", ev.gui_id, ev.sprite_id);
-            }
-        }
+        let image = gui_images.0.get(&ev.sprite_id)
+            .with_context(|| format!("GUI asset '{}' does not exist", ev.sprite_id))?;
+        let target = match ev.gui_target {
+            GuiChangeTarget::TextBoxBackground => &mut param_set.p0().image,
+            GuiChangeTarget::NameBoxBackground => &mut param_set.p1().image,
+        };
+        *target = image.clone();
+        
     }
     Ok(())
 }

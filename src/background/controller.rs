@@ -24,7 +24,7 @@ pub struct BackgroundNode;
 #[derive(Resource)]
 struct HandleToBackgroundsFolder(Handle<LoadedFolder>);
 #[derive(Resource)]
-pub struct BackgroundImages(HashMap::<String, Handle<Image>>);
+struct BackgroundImages(HashMap::<String, Handle<Image>>);
 
 /* Messages */
 #[derive(Message)]
@@ -73,15 +73,14 @@ fn setup(
                 /* Background Setup */
                 let ui_root = ui_root.with_context(|| "Cannot find UiRoot node in the World")?;
                 commands.entity(ui_root.entity()).with_child((
-                    ImageNode {
-                        // image_mode: NodeImageMode::Stretch,
-                        ..default()
-                    },
+                    ImageNode::default(),
                     Node {
                         width: Val::Percent(100.),
                         height: Val::Percent(100.),
+                        position_type: PositionType::Absolute,
                         ..default()
                     },
+                    ZIndex(0),
                     Transform::default(),
                     BackgroundNode,
                 ));
@@ -96,7 +95,7 @@ fn setup(
     }
     Ok(())
 }
-pub fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
+fn import_backgrounds(mut commands: Commands, asset_server: Res<AssetServer>){
     let loaded_folder = asset_server.load_folder("backgrounds");
     commands.insert_resource(HandleToBackgroundsFolder(loaded_folder));
 }
@@ -108,7 +107,7 @@ fn wait_trigger(
         controller_state.set(BackgroundControllerState::Running);
     }
 }
-pub fn update_background(
+fn update_background(
     mut background_change_message: MessageReader<BackgroundChangeMessage>,
     background_images: Res<BackgroundImages>,
     mut background_query: Single<&mut ImageNode, With<BackgroundNode>>,
@@ -117,7 +116,7 @@ pub fn update_background(
         let background_handle = background_images.0.get(&msg.background_id)
             .with_context(|| format!("Background '{}' does not exist", msg.background_id))?;
         background_query.image = background_handle.clone();
-        println!("[ Set background to '{}']", msg.background_id);
+        info!("[ Set background to '{}']", msg.background_id);
     }
     Ok(())
 }

@@ -14,10 +14,8 @@ use bevy::ecs::error::ErrorContext;
 use bevy::{
     prelude::*,
     window::*,
-    asset::Handle,
 };
 use std::vec::IntoIter;
-use std::collections::HashMap;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -63,9 +61,6 @@ struct Object {
 pub struct VisualNovelState {
     // Player-designated constants
     playername: String,
-
-    // Assets
-    gui_sprites: HashMap<String, Handle<Image>>,
 
     // Game state
     acts: ast::Acts,

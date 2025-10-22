@@ -82,31 +82,31 @@ pub fn spawn_character(
             return;
         }
     };
-    let entity = commands.spawn((
-        Object {
-            id: format!("_character_{}", character_config.name),
-        },
-        Sprite {
-            image,
-            color: Color::default().with_alpha(if *fading {
-                0.
-            } else { 1. }),
-            ..default()
-        },
-        Transform::default()
-            .with_translation(Vec3 {
-                x: 0.,
-                y: -40.,
-                z: 1.,
-            })
-            .with_scale(Vec3 {
-                x: 0.75,
-                y: 0.75,
-                z: 1.,
-            }),
-        character_config
-    )).id();
-    if *fading {
-        fading_characters.0.push((entity, 0.01, false));
-    }
+    // let entity = commands.spawn((
+    //     Object {
+    //         id: format!("_character_{}", character_config.name),
+    //     },
+    //     Sprite {
+    //         image,
+    //         color: Color::default().with_alpha(if *fading {
+    //             0.
+    //         } else { 1. }),
+    //         ..default()
+    //     },
+    //     Transform::default()
+    //         .with_translation(Vec3 {
+    //             x: 0.,
+    //             y: -40.,
+    //             z: 1.,
+    //         })
+    //         .with_scale(Vec3 {
+    //             x: 0.75,
+    //             y: 0.75,
+    //             z: 1.,
+    //         }),
+    //     character_config
+    // )).id();
+    // if *fading {
+    //     fading_characters.0.push((entity, 0.01, false));
+    // }
 }
