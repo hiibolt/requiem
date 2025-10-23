@@ -1,4 +1,4 @@
-use crate::{compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage, UiRoot}, Object, VisualNovelState};
+use crate::{chat::ui_provider::{backplate_container, messagetext, namebox, nametext, textbox, top_section}, compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage, UiRoot}, Object, VisualNovelState};
 
 use std::collections::HashMap;
 
@@ -32,11 +32,11 @@ pub struct GUIScrollText {
     pub message: String
 }
 #[derive(Component)]
-struct TextBoxBackground;
+pub struct TextBoxBackground;
 #[derive(Component)]
-struct NameBoxBackground;
+pub struct NameBoxBackground;
 #[derive(Component)]
-struct NameText;
+pub struct NameText;
 #[derive(Component)]
 struct MessageText;
 #[derive(Component)]
@@ -58,21 +58,19 @@ pub enum GuiChangeTarget {
 }
 
 #[derive(Bundle)]
-struct TextBundle {
+pub struct TextBundle {
     object: Object,
     scroll_text: GUIScrollText,
     text: Text2d,
     layout: TextLayout,
     font: TextFont,
     color: TextColor,
-    anchor: Anchor,
-    transform: Transform,
     bounds: TextBounds,
     visibility: Visibility,
 }
 
 impl TextBundle {
-    fn new(object: Object, text: &str) -> Self {
+    pub fn new(object: Object, text: &str) -> Self {
         Self {
             object,
             scroll_text: GUIScrollText { message: text.to_string() },
@@ -80,14 +78,12 @@ impl TextBundle {
             layout: TextLayout::default(),
             font: TextFont::default(),
             color: TextColor::WHITE,
-            anchor: Anchor::TOP_LEFT,
-            transform: Transform::default(),
             bounds: TextBounds::default(),
             visibility: Visibility::default()
         }
     }
 
-    fn with_font(self, font: TextFont) -> Self {
+    pub fn with_font(self, font: TextFont) -> Self {
         Self {
             font,
             ..self
@@ -104,20 +100,6 @@ impl TextBundle {
     fn with_color(self, color: TextColor) -> Self {
         Self {
             color,
-            ..self
-        }
-    }
-
-    fn with_anchor(self, anchor: Anchor) -> Self {
-        Self {
-            anchor,
-            ..self
-        }
-    }
-
-    fn with_transform(self, transform: Transform) -> Self {
-        Self {
-            transform,
             ..self
         }
     }
@@ -202,71 +184,31 @@ fn spawn_chatbox(
     ui_root: Single<Entity, With<UiRoot>>,
 ){
     // Spawn Backplate + Nameplate
-    let container = commands.spawn((
-        Node {
-            width: Val::Percent(70.),
-            height: Val::Percent(20.),
-            display: Display::Flex,
-            flex_direction: FlexDirection::Column,
-            ..default()
-        },
-        ZIndex(3),
-    )).id();
-    
+
+    // Container
+    let container = commands.spawn(backplate_container()).id();
     commands.entity(ui_root.entity()).add_child(container);
     
-    commands.entity(container).with_children(|parent| {
-        parent.spawn((
-            ImageNode::default(),
-            Node {
-                height: Val::Percent(15.),
-                ..default()
-            },
-            Visibility::Inherited,
-            ZIndex(3),
-            NameBoxBackground,
-        )).with_child((
-            TextBundle::new(
-                Object {
-                    id: String::from("_name_text")
-                },
-                "UNFILLED"
-            )
-            .with_font(TextFont {
-                           font: asset_server.load("fonts/ALLER.ttf"),
-                           font_size: 40.0,
-                           ..default()
-                       }),
-            NameText
-        ));
-        parent.spawn((
-            ImageNode {
-                ..default()
-            },
-            Node {
-                width: Val::Percent(100.),
-                ..default()
-            },
-            ZIndex(2),
-            Visibility::Visible,
-            RelativeCursorPosition::default(),
-            TextBoxBackground,
-        )).with_child((
-            TextBundle::new(
-                Object {
-                    id: String::from("_message_text")
-                },
-                "UNFILLED"
-            )
-            .with_font(TextFont {
-                           font: asset_server.load("fonts/BOLDITALIC.ttf"),
-                           font_size: 27.0,
-                           ..default()
-                       }),
-            MessageText
-        ));
-    });
-
+    // Top section: Nameplate flex container
+    let top_section = commands.spawn(top_section()).id();
+    commands.entity(container).add_child(top_section);
+    
+    // Namebox Node
+    let namebox = commands.spawn(namebox()).id();
+    commands.entity(top_section).add_child(namebox);
+    
+    // NameText
+    let nametext = commands.spawn(nametext(&asset_server)).id();
+    commands.entity(namebox).add_child(nametext);
+    
+    // Backplate Node
+    let textbox_bg = commands.spawn(textbox()).id();
+    commands.entity(container).add_child(textbox_bg);
+    
+    // MessageText
+    let messagetext = commands.spawn(messagetext(&asset_server)).id();
+    commands.entity(textbox_bg).add_child(messagetext);
+    
     // commands.spawn((
     //     TextBundle::new(
     //         Object {
@@ -307,26 +249,26 @@ fn update_chatbox(
     let mut message_text_option: Option<&mut Text2d> = None;
     let mut message_scroll_text_obj_option: Option<&mut GUIScrollText> = None;
     
-    for (text_literal, scroll_text_obj, text_obj) in text_object_query.iter_mut() {
-        match text_obj.id.as_str() {
-            "_name_text" => name_text_option = Some(text_literal.into_inner()),
-            // "_info_text" => info_text_option = Some(text_literal.into_inner()),
-            "_message_text" => {
-                message_text_option = Some(text_literal.into_inner());
-                message_scroll_text_obj_option = Some(scroll_text_obj.into_inner());
-            },
-            _ => {}
-        }
-    }
+    // for (text_literal, scroll_text_obj, text_obj) in text_object_query.iter_mut() {
+    //     match text_obj.id.as_str() {
+    //         "_name_text" => name_text_option = Some(text_literal.into_inner()),
+    //         // "_info_text" => info_text_option = Some(text_literal.into_inner()),
+    //         "_message_text" => {
+    //             message_text_option = Some(text_literal.into_inner());
+    //             message_scroll_text_obj_option = Some(scroll_text_obj.into_inner());
+    //         },
+    //         _ => {}
+    //     }
+    // }
     
-    let name_text = name_text_option
-        .context("Missing GUI text object with ID '_name_text'")?;
-    // let info_text = info_text_option
-        // .context("Missing GUI text object with ID '_info_text'")?;
-    let message_text = message_text_option
-        .context("Missing GUI text object with ID '_message_text'")?;
-    let message_scroll_text_obj = message_scroll_text_obj_option
-        .context("Missing GUI scroll text object with ID '_message_text'")?;
+    // let name_text = name_text_option
+    //     .context("Missing GUI text object with ID '_name_text'")?;
+    // // let info_text = info_text_option
+    //     // .context("Missing GUI text object with ID '_info_text'")?;
+    // let message_text = message_text_option
+    //     .context("Missing GUI text object with ID '_message_text'")?;
+    // let message_scroll_text_obj = message_scroll_text_obj_option
+    //     .context("Missing GUI scroll text object with ID '_message_text'")?;
 
     // Tick clock
     let to_tick = if time.delta_secs() > 1. { std::time::Duration::from_secs_f32(0.) } else { time.delta() };
@@ -345,11 +287,11 @@ fn update_chatbox(
 
         // Update the name
         let name = if ev.name == "[_PLAYERNAME_]" { game_state.playername.clone() } else { ev.name.clone() };
-        name_text.0 = name;
+        // name_text.0 = name;
 
         println!("MESSAGE {}", ev.message);
 
-        message_scroll_text_obj.message = ev.message.clone();
+        // message_scroll_text_obj.message = ev.message.clone();
     }
 
     // If the textbox is hidden, ignore the next section dedicated to updating it
@@ -358,42 +300,42 @@ fn update_chatbox(
     }
 
     // Take the original string from the message object
-    let mut original_string: String = message_scroll_text_obj.message.clone();
+    // let mut original_string: String = message_scroll_text_obj.message.clone();
 
     // Get the section of the string according to the elapsed time
     let length: u32 = (scroll_stopwatch.0.elapsed_secs() * 50.) as u32;
 
     // Return the section and apply it to the text object
-    original_string.truncate(length as usize);
-    message_text.0 = original_string;
+    // original_string.truncate(length as usize);
+    // message_text.0 = original_string;
 
-    let window = window.single()
-        .context("Failed to query for primary window")?;
+    // let window = window.single()
+    //     .context("Failed to query for primary window")?;
     
-    if let Some(position) = window.cursor_position() {
-        let resolution = &window.resolution;
-        let textbox_bounds: [f32; 4] = [
-            (resolution.width() / 2.) - (796. / 2.),
-            (resolution.width() / 2.) + (796. / 2.),
-            (resolution.height() / 2.) - (155. / 2.) + (275.),
-            (resolution.height() / 2.) + (155. / 2.) + (275.),
-        ];
-        if ( position.x > textbox_bounds[0] && position.x < textbox_bounds[1] ) && ( position.y > textbox_bounds[2] && position.y < textbox_bounds[3] ) && buttons.just_pressed(MouseButton::Left) {
-            if length < message_scroll_text_obj.message.len() as u32 {
-                // Skip message scrolling
-                scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(100000000.));
-                return Ok(());
-            }
-            println!("[ Player finished message ]");
-            // info_text.0 = String::from("");
+    // if let Some(position) = window.cursor_position() {
+    //     let resolution = &window.resolution;
+    //     let textbox_bounds: [f32; 4] = [
+    //         (resolution.width() / 2.) - (796. / 2.),
+    //         (resolution.width() / 2.) + (796. / 2.),
+    //         (resolution.height() / 2.) - (155. / 2.) + (275.),
+    //         (resolution.height() / 2.) + (155. / 2.) + (275.),
+    //     ];
+    //     if ( position.x > textbox_bounds[0] && position.x < textbox_bounds[1] ) && ( position.y > textbox_bounds[2] && position.y < textbox_bounds[3] ) && buttons.just_pressed(MouseButton::Left) {
+    //         if length < message_scroll_text_obj.message.len() as u32 {
+    //             // Skip message scrolling
+    //             scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(100000000.));
+    //             return Ok(());
+    //         }
+    //         println!("[ Player finished message ]");
+    //         // info_text.0 = String::from("");
 
-            // Hide textbox parent object
-            *textbox_bg_visibility = Visibility::Hidden;
+    //         // Hide textbox parent object
+    //         *textbox_bg_visibility = Visibility::Hidden;
 
-            // Allow transitions to be run again
-            game_state.blocking = false;
-        }
-    }
+    //         // Allow transitions to be run again
+    //         game_state.blocking = false;
+    //     }
+    // }
     
     Ok(())
 }

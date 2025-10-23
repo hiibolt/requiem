@@ -61,9 +61,10 @@ fn spawn_ui_root(
         Node {
             width: Val::Percent(100.),
             height: Val::Percent(100.),
+            align_items: AlignItems::FlexEnd,
+            justify_content: JustifyContent::Center,
             ..default()
         },
-        GlobalTransform::default(),
         BackgroundColor(Color::NONE.into()),
         UiRoot,
     ));
