@@ -1,12 +1,13 @@
-use bevy::{prelude::*, ui::RelativeCursorPosition};
+use bevy::{color::palettes::css::RED, prelude::*, ui::RelativeCursorPosition};
 
-use crate::chat::controller::{NameBoxBackground, NameText, TextBoxBackground};
+use crate::chat::{controller::{InfoText, MessageText, NameBoxBackground, NameText, TextBoxBackground}, GUIScrollText};
 pub fn backplate_container() -> impl Bundle {
     (
         Node {
             width: Val::Vw(70.),
-            height: Val::Percent(20.),
+            height: Val::Vh(20.),
             margin: UiRect::all(Val::Auto).with_bottom(Val::Px(25.)),
+            // position_type: PositionType::Absolute,
             display: Display::Flex,
             flex_direction: FlexDirection::Column,
             ..default()
@@ -56,9 +57,7 @@ pub fn nametext(asset_server: &Res<AssetServer>) -> impl Bundle {
 
 pub fn textbox() -> impl Bundle {
     (
-        ImageNode {
-            ..default()
-        },
+        ImageNode::default(),
         Node {
             width: Val::Percent(100.),
             min_height: Val::Percent(100.),
@@ -74,15 +73,33 @@ pub fn textbox() -> impl Bundle {
 pub fn messagetext(asset_server: &Res<AssetServer>) -> impl Bundle {
     (
         Text::new("TEST"),
-        Node {
-            // position_type: PositionType::Absolute,
-            ..default()
-        },
+        GUIScrollText::default(),
+        Node::default(),
         TextFont {
             font: asset_server.load("fonts/ALLER.ttf"),
             font_size: 40.0,
             ..default()
         },
         ZIndex(3),
+        MessageText
+    )
+}
+
+pub fn infotext(asset_server: &Res<AssetServer>) -> impl Bundle {
+    (
+        Text::new("TEST"),
+        Node::default(),
+        TextFont {
+            font: asset_server.load("fonts/ALLER.ttf"),
+            font_size: 40.0,
+            ..default()
+        },
+        TextLayout {
+            justify: Justify::Center,
+            linebreak: LineBreak::WordBoundary,
+        },
+        TextColor(Color::Srgba(RED)),
+        ZIndex(3),
+        InfoText
     )
 }

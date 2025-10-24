@@ -1,9 +1,9 @@
-use crate::{chat::ui_provider::{backplate_container, messagetext, namebox, nametext, textbox, top_section}, compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage, UiRoot}, Object, VisualNovelState};
+use crate::{chat::ui_provider::{backplate_container, infotext, messagetext, namebox, nametext, textbox, top_section}, compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage, UiRoot}, Object, VisualNovelState};
 
 use std::collections::HashMap;
 
 use anyhow::Context;
-use bevy::{asset::{LoadState, LoadedFolder}, color::palettes::css::RED, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, ui::{debug::print_ui_layout_tree, ui_layout_system, RelativeCursorPosition}, window::PrimaryWindow};
+use bevy::{asset::{LoadState, LoadedFolder}, color::palettes::css::RED, ecs::message, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, ui::{debug::print_ui_layout_tree, ui_layout_system, RelativeCursorPosition}, window::PrimaryWindow};
 
 /* Messages */
 #[derive(Message)]
@@ -27,7 +27,7 @@ enum ChatControllerState {
 }
 
 /* Components */
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct GUIScrollText {
     pub message: String
 }
@@ -38,9 +38,9 @@ pub struct NameBoxBackground;
 #[derive(Component)]
 pub struct NameText;
 #[derive(Component)]
-struct MessageText;
+pub struct MessageText;
 #[derive(Component)]
-struct InfoText;
+pub struct InfoText;
 
 /* Resources */
 #[derive(Resource)]
@@ -55,68 +55,6 @@ struct GuiImages(HashMap<String, Handle<Image>>);
 pub enum GuiChangeTarget {
     TextBoxBackground,
     NameBoxBackground,
-}
-
-#[derive(Bundle)]
-pub struct TextBundle {
-    object: Object,
-    scroll_text: GUIScrollText,
-    text: Text2d,
-    layout: TextLayout,
-    font: TextFont,
-    color: TextColor,
-    bounds: TextBounds,
-    visibility: Visibility,
-}
-
-impl TextBundle {
-    pub fn new(object: Object, text: &str) -> Self {
-        Self {
-            object,
-            scroll_text: GUIScrollText { message: text.to_string() },
-            text: Text2d(text.into()),
-            layout: TextLayout::default(),
-            font: TextFont::default(),
-            color: TextColor::WHITE,
-            bounds: TextBounds::default(),
-            visibility: Visibility::default()
-        }
-    }
-
-    pub fn with_font(self, font: TextFont) -> Self {
-        Self {
-            font,
-            ..self
-        }
-    }
-
-    fn with_layout(self, layout: TextLayout) -> Self {
-        Self {
-            layout,
-            ..self
-        }
-    }
-
-    fn with_color(self, color: TextColor) -> Self {
-        Self {
-            color,
-            ..self
-        }
-    }
-
-    fn with_bounds(self, bounds: TextBounds) -> Self {
-        Self {
-            bounds,
-            ..self
-        }
-    }
-
-    fn with_visibility(self, visibility: Visibility) -> Self {
-        Self {
-            visibility,
-            ..self
-        }
-    }
 }
 
 pub struct ChatController;
@@ -183,8 +121,9 @@ fn spawn_chatbox(
     asset_server: Res<AssetServer>,
     ui_root: Single<Entity, With<UiRoot>>,
 ){
+    // Todo: add despawn of ui elements
+    
     // Spawn Backplate + Nameplate
-
     // Container
     let container = commands.spawn(backplate_container()).id();
     commands.entity(ui_root.entity()).add_child(container);
@@ -209,34 +148,15 @@ fn spawn_chatbox(
     let messagetext = commands.spawn(messagetext(&asset_server)).id();
     commands.entity(textbox_bg).add_child(messagetext);
     
-    // commands.spawn((
-    //     TextBundle::new(
-    //         Object {
-    //             id: String::from("_info_text")
-    //         },
-    //         "",
-    //     )
-    //     .with_font(TextFont {
-    //                    font: asset_server.load("fonts/BOLD.ttf"),
-    //                    font_size: 50.,
-    //                    ..default()
-    //                })
-    //     .with_anchor(Anchor::TOP_CENTER)
-    //     .with_layout(TextLayout {
-    //                      justify: Justify::Center,
-    //                      linebreak: LineBreak::WordBoundary,
-    //                  })
-    //     .with_color(TextColor(Color::Srgba(RED)))
-    //     .with_transform(Transform::from_xyz(0., 302., 3.))
-    //     .with_visibility(Visibility::Visible)
-    //     .with_bounds(TextBounds { width: Some(700.), height: None }),
-    //     InfoText
-    // ));
+    // InfoText
+    // commands.spawn(infotext(&asset_server));
 }
 fn update_chatbox(
     mut event_message: MessageReader<CharacterSayMessage>,
     textbox_bg_visibility: Single<&mut Visibility, With<TextBoxBackground>>,
-    mut text_object_query: Query<(&mut Text2d, &mut GUIScrollText, &Object)>,
+    mut name_text: Single<&mut Text, (With<NameText>, Without<MessageText>)>,
+    mut message_text: Single<(&mut GUIScrollText, &mut Text), (With<MessageText>, Without<NameText>)>,
+    // mut text_object_query: Query<(&mut Text2d, &mut GUIScrollText, &Object)>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
     mut game_state: ResMut<VisualNovelState>,
     time: Res<Time>,
@@ -244,10 +164,10 @@ fn update_chatbox(
     buttons: Res<ButtonInput<MouseButton>>,
 ) -> Result<(), BevyError> {
     /* QUICK USE VARIABLES */
-    let mut name_text_option: Option<&mut Text2d> = None;
+    // let mut name_text_option: Option<&mut Text2d> = None;
     // let mut info_text_option: Option<&mut Text2d> = None;
-    let mut message_text_option: Option<&mut Text2d> = None;
-    let mut message_scroll_text_obj_option: Option<&mut GUIScrollText> = None;
+    // let mut message_text_option: Option<&mut Text2d> = None;
+    // let mut message_scroll_text_obj_option: Option<&mut GUIScrollText> = None;
     
     // for (text_literal, scroll_text_obj, text_obj) in text_object_query.iter_mut() {
     //     match text_obj.id.as_str() {
@@ -287,11 +207,11 @@ fn update_chatbox(
 
         // Update the name
         let name = if ev.name == "[_PLAYERNAME_]" { game_state.playername.clone() } else { ev.name.clone() };
-        // name_text.0 = name;
+        name_text.0 = name;
 
         println!("MESSAGE {}", ev.message);
 
-        // message_scroll_text_obj.message = ev.message.clone();
+        message_text.0.message = ev.message.clone();
     }
 
     // If the textbox is hidden, ignore the next section dedicated to updating it
@@ -300,14 +220,14 @@ fn update_chatbox(
     }
 
     // Take the original string from the message object
-    // let mut original_string: String = message_scroll_text_obj.message.clone();
+    let mut original_string: String = message_text.0.message.clone();
 
     // Get the section of the string according to the elapsed time
     let length: u32 = (scroll_stopwatch.0.elapsed_secs() * 50.) as u32;
 
     // Return the section and apply it to the text object
-    // original_string.truncate(length as usize);
-    // message_text.0 = original_string;
+    original_string.truncate(length as usize);
+    message_text.1.0 = original_string;
 
     // let window = window.single()
     //     .context("Failed to query for primary window")?;
