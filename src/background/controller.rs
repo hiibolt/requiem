@@ -80,7 +80,6 @@ fn setup(
                         position_type: PositionType::Absolute,
                         ..default()
                     },
-                    ZIndex(0),
                     Transform::default(),
                     BackgroundNode,
                 ));

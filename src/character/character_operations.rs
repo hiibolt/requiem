@@ -1,9 +1,11 @@
 use std::ops::Index;
 use anyhow::Context;
-
 use bevy::prelude::*;
-
 use crate::{character::{controller::{FadingCharacters, SpriteKey}, CharacterConfig, CharactersResource}, Object, VisualNovelState};
+use crate::compiler::controller::UiRoot;
+
+#[derive(Component)]
+pub struct Character;
 
 pub fn change_character_emotion(
     sprite: &mut Sprite,
@@ -23,7 +25,7 @@ pub fn change_character_emotion(
 }
 pub fn apply_alpha(
     mut commands: Commands,
-    mut query: Query<&mut Sprite>,
+    mut query: Query<&mut ImageNode, With<Character>>,
     mut fading_characters: ResMut<FadingCharacters>,
     mut game_state: ResMut<VisualNovelState>,
 ) {
@@ -69,44 +71,34 @@ pub fn spawn_character(
     sprites: &Res<CharactersResource>,
     fading: &bool,
     fading_characters: &mut ResMut<FadingCharacters>,
-) {
+    ui_root: &Single<Entity, With<UiRoot>>,
+) -> Result<(), BevyError> {
     let sprite_key = SpriteKey {
         character: character_config.name.clone(),
         outfit: character_config.outfit.clone(),
         emotion: character_config.emotion.clone(),
     };
-    let image = match sprites.0.get(&sprite_key) {
-        Some(s) => s.clone(),
-        None => {
-            eprintln!("No sprite found for {:?}", sprite_key);
-            return;
-        }
-    };
-    // let entity = commands.spawn((
-    //     Object {
-    //         id: format!("_character_{}", character_config.name),
-    //     },
-    //     Sprite {
-    //         image,
-    //         color: Color::default().with_alpha(if *fading {
-    //             0.
-    //         } else { 1. }),
-    //         ..default()
-    //     },
-    //     Transform::default()
-    //         .with_translation(Vec3 {
-    //             x: 0.,
-    //             y: -40.,
-    //             z: 1.,
-    //         })
-    //         .with_scale(Vec3 {
-    //             x: 0.75,
-    //             y: 0.75,
-    //             z: 1.,
-    //         }),
-    //     character_config
-    // )).id();
-    // if *fading {
-    //     fading_characters.0.push((entity, 0.01, false));
-    // }
+    let image = sprites.0.get(&sprite_key).with_context(|| format!("No sprite founr for {:?}", sprite_key))?;
+    let entity = commands.entity(ui_root.entity()).with_child((
+        ImageNode {
+            image: image.clone(),
+            color: Color::default().with_alpha(if *fading {
+                0.
+            } else { 1. }),
+            ..default()
+        },
+        Node {
+            position_type: PositionType::Absolute,
+            max_height: Val::Vh(75.),
+            bottom: Val::Px(0.),
+            ..default()
+        },
+        ZIndex(2),
+        Character,
+        character_config
+    )).id();
+    if *fading {
+        fading_characters.0.push((entity, 0.01, false));
+    }
+    Ok(())
 }

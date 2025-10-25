@@ -11,7 +11,6 @@ pub fn backplate_container() -> impl Bundle {
             flex_direction: FlexDirection::Column,
             ..default()
         },
-        ZIndex(1),
     )
 }
 
@@ -31,7 +30,7 @@ pub fn namebox() -> impl Bundle {
             ..default()
         },
         Visibility::Visible,
-        ZIndex(2),
+        GlobalZIndex(3),
         NameBoxBackground,
     )
 }
@@ -48,7 +47,6 @@ pub fn nametext(asset_server: &Res<AssetServer>) -> impl Bundle {
             font_size: 30.0,
             ..default()
         },
-        ZIndex(3),
         NameText
     )
 }
@@ -63,7 +61,7 @@ pub fn textbox() -> impl Bundle {
             min_height: Val::Percent(100.),
             ..default()
         },
-        ZIndex(2),
+        GlobalZIndex(3),
         Visibility::Visible,
         RelativeCursorPosition::default(),
         TextBoxBackground,
@@ -82,6 +80,5 @@ pub fn messagetext(asset_server: &Res<AssetServer>) -> impl Bundle {
             font_size: 40.0,
             ..default()
         },
-        ZIndex(3),
     )
 }
