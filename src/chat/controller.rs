@@ -1,9 +1,9 @@
-use crate::{chat::ui_provider::{backplate_container, infotext, messagetext, namebox, nametext, textbox, top_section}, compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage, UiRoot}, Object, VisualNovelState};
+use crate::{chat::ui_provider::{backplate_container, infotext, messagetext, namebox, nametext, textbox, top_section}, compiler::controller::{Controller, ControllerReadyMessage, TriggerControllersMessage, UiRoot}, VisualNovelState};
 
 use std::collections::HashMap;
 
 use anyhow::Context;
-use bevy::{asset::{LoadState, LoadedFolder}, color::palettes::css::RED, ecs::message, prelude::*, sprite::Anchor, text::{LineBreak, TextBounds}, time::Stopwatch, ui::{debug::print_ui_layout_tree, ui_layout_system, RelativeCursorPosition}, window::PrimaryWindow};
+use bevy::{asset::{LoadState, LoadedFolder}, prelude::*, time::Stopwatch, ui::RelativeCursorPosition};
 
 /* Messages */
 #[derive(Message)]
@@ -31,6 +31,8 @@ enum ChatControllerState {
 pub struct GUIScrollText {
     pub message: String
 }
+#[derive(Component)]
+pub struct VNContainer;
 #[derive(Component)]
 pub struct TextBoxBackground;
 #[derive(Component)]
@@ -68,13 +70,8 @@ impl Plugin for ChatController {
             .add_message::<GUIChangeMessage>()
             .add_systems(Update, wait_trigger.run_if(in_state(ChatControllerState::Idle)))
             .add_systems(OnEnter(ChatControllerState::Running), spawn_chatbox)
-            .add_systems(Update, (update_chatbox, handle_click, update_gui).run_if(in_state(ChatControllerState::Running)));
+            .add_systems(Update, (update_chatbox, update_gui).run_if(in_state(ChatControllerState::Running)));
     }
-}
-fn handle_click(
-    relative_cursor: Single<&RelativeCursorPosition>
-) {
-    // info!("HANDLE CLICK {}", relative_cursor.cursor_over());
 }
 fn setup(
     mut commands: Commands,
@@ -149,73 +146,41 @@ fn spawn_chatbox(
     commands.entity(textbox_bg).add_child(messagetext);
     
     // InfoText
-    // commands.spawn(infotext(&asset_server));
+    commands.spawn(infotext(&asset_server));
 }
 fn update_chatbox(
     mut event_message: MessageReader<CharacterSayMessage>,
-    textbox_bg_visibility: Single<&mut Visibility, With<TextBoxBackground>>,
+    vncontainer_visibility: Single<&mut Visibility, With<VNContainer>>,
     mut name_text: Single<&mut Text, (With<NameText>, Without<MessageText>)>,
     mut message_text: Single<(&mut GUIScrollText, &mut Text), (With<MessageText>, Without<NameText>)>,
-    // mut text_object_query: Query<(&mut Text2d, &mut GUIScrollText, &Object)>,
     mut scroll_stopwatch: ResMut<ChatScrollStopwatch>,
     mut game_state: ResMut<VisualNovelState>,
     time: Res<Time>,
-    window: Query<&Window, With<PrimaryWindow>>,
-    buttons: Res<ButtonInput<MouseButton>>,
+    relative_cursor: Single<&RelativeCursorPosition>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
 ) -> Result<(), BevyError> {
-    /* QUICK USE VARIABLES */
-    // let mut name_text_option: Option<&mut Text2d> = None;
-    // let mut info_text_option: Option<&mut Text2d> = None;
-    // let mut message_text_option: Option<&mut Text2d> = None;
-    // let mut message_scroll_text_obj_option: Option<&mut GUIScrollText> = None;
-    
-    // for (text_literal, scroll_text_obj, text_obj) in text_object_query.iter_mut() {
-    //     match text_obj.id.as_str() {
-    //         "_name_text" => name_text_option = Some(text_literal.into_inner()),
-    //         // "_info_text" => info_text_option = Some(text_literal.into_inner()),
-    //         "_message_text" => {
-    //             message_text_option = Some(text_literal.into_inner());
-    //             message_scroll_text_obj_option = Some(scroll_text_obj.into_inner());
-    //         },
-    //         _ => {}
-    //     }
-    // }
-    
-    // let name_text = name_text_option
-    //     .context("Missing GUI text object with ID '_name_text'")?;
-    // // let info_text = info_text_option
-    //     // .context("Missing GUI text object with ID '_info_text'")?;
-    // let message_text = message_text_option
-    //     .context("Missing GUI text object with ID '_message_text'")?;
-    // let message_scroll_text_obj = message_scroll_text_obj_option
-    //     .context("Missing GUI scroll text object with ID '_message_text'")?;
-
     // Tick clock
     let to_tick = if time.delta_secs() > 1. { std::time::Duration::from_secs_f32(0.) } else { time.delta() };
     scroll_stopwatch.0.tick(to_tick);
-    let mut textbox_bg_visibility = textbox_bg_visibility.into_inner();
+    let mut vncontainer_visibility = vncontainer_visibility.into_inner();
 
     /* STANDARD SAY EVENTS INITIALIZATION [Transition::Say] */
     for ev in event_message.read() {
         game_state.blocking = true;
-
-        // Make the parent textbox visible
-        *textbox_bg_visibility = Visibility::Visible;
-
+        // Make the visual novel ui container visible
+        *vncontainer_visibility = Visibility::Visible;
         // Reset the scrolling timer
         scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(0.));
-
         // Update the name
         let name = if ev.name == "[_PLAYERNAME_]" { game_state.playername.clone() } else { ev.name.clone() };
         name_text.0 = name;
-
         println!("MESSAGE {}", ev.message);
-
         message_text.0.message = ev.message.clone();
     }
 
-    // If the textbox is hidden, ignore the next section dedicated to updating it
-    if *textbox_bg_visibility == Visibility::Hidden {
+    // If vn container is hidden, ignore the next section dedicated to updating it
+    if *vncontainer_visibility == Visibility::Hidden {
         return Ok(());
     }
 
@@ -229,37 +194,24 @@ fn update_chatbox(
     original_string.truncate(length as usize);
     message_text.1.0 = original_string;
 
-    // let window = window.single()
-    //     .context("Failed to query for primary window")?;
-    
-    // if let Some(position) = window.cursor_position() {
-    //     let resolution = &window.resolution;
-    //     let textbox_bounds: [f32; 4] = [
-    //         (resolution.width() / 2.) - (796. / 2.),
-    //         (resolution.width() / 2.) + (796. / 2.),
-    //         (resolution.height() / 2.) - (155. / 2.) + (275.),
-    //         (resolution.height() / 2.) + (155. / 2.) + (275.),
-    //     ];
-    //     if ( position.x > textbox_bounds[0] && position.x < textbox_bounds[1] ) && ( position.y > textbox_bounds[2] && position.y < textbox_bounds[3] ) && buttons.just_pressed(MouseButton::Left) {
-    //         if length < message_scroll_text_obj.message.len() as u32 {
-    //             // Skip message scrolling
-    //             scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(100000000.));
-    //             return Ok(());
-    //         }
-    //         println!("[ Player finished message ]");
-    //         // info_text.0 = String::from("");
+    if (mouse_input.just_pressed(MouseButton::Left) && relative_cursor.cursor_over()) || keyboard_input.just_pressed(KeyCode::Space) {
+        if length < message_text.0.message.len() as u32 {
+            // Skip message scrolling
+            scroll_stopwatch.0.set_elapsed(std::time::Duration::from_secs_f32(100000000.));
+            return Ok(());
+        }
+        println!("[ Player finished message ]");
+        // info_text.0 = String::from("");
 
-    //         // Hide textbox parent object
-    //         *textbox_bg_visibility = Visibility::Hidden;
+        // Hide textbox parent object
+        *vncontainer_visibility = Visibility::Hidden;
 
-    //         // Allow transitions to be run again
-    //         game_state.blocking = false;
-    //     }
-    // }
+        // Allow transitions to be run again
+        game_state.blocking = false;
+    }
     
     Ok(())
 }
-
 fn wait_trigger(
     mut msg_reader: MessageReader<TriggerControllersMessage>,
     mut controller_state: ResMut<NextState<ChatControllerState>>,

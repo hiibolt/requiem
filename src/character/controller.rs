@@ -178,7 +178,7 @@ fn wait_trigger(
 }
 fn update_characters(
     mut commands: Commands,
-    mut character_query: Query<(Entity, &mut CharacterConfig, &mut Sprite)>,
+    mut character_query: Query<(Entity, &mut CharacterConfig, &mut ImageNode)>,
     ui_root: Single<Entity, With<UiRoot>>,
     sprites: Res<CharactersResource>,
     mut configs: ResMut<Configs>,
@@ -208,7 +208,7 @@ fn update_characters(
                 if !character_config.emotions.contains(&emotion) {
                     return Err(anyhow::anyhow!("Character does not have {} emotion!", emotion).into());
                 }
-                let mut entity = match character_query.iter_mut().find(|entity| entity.1.name == character_config.name) {
+                let mut entity = match character_query.iter_mut().find(|entity| {info!("found config {:?}", entity.1); return entity.1.name == character_config.name;}) {
                     Some(e) => e,
                     None => {
                         let warn_message = format!("Character {} not found in the World!", character_config.name);

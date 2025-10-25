@@ -1,5 +1,5 @@
 use bevy::{color::palettes::css::RED, prelude::*, ui::RelativeCursorPosition};
-use crate::chat::{controller::{InfoText, MessageText, NameBoxBackground, NameText, TextBoxBackground}, GUIScrollText};
+use crate::chat::{controller::{InfoText, MessageText, NameBoxBackground, NameText, TextBoxBackground, VNContainer}, GUIScrollText};
 
 pub fn backplate_container() -> impl Bundle {
     (
@@ -11,6 +11,8 @@ pub fn backplate_container() -> impl Bundle {
             flex_direction: FlexDirection::Column,
             ..default()
         },
+        Visibility::Hidden,
+        VNContainer
     )
 }
 
@@ -29,7 +31,7 @@ pub fn namebox() -> impl Bundle {
             align_items: AlignItems::Center,
             ..default()
         },
-        Visibility::Visible,
+        Visibility::Inherited,
         GlobalZIndex(3),
         NameBoxBackground,
     )
@@ -57,10 +59,16 @@ pub fn textbox() -> impl Bundle {
         Node {
             width: Val::Percent(100.),
             min_height: Val::Percent(100.),
+            padding: UiRect {
+                top: Val::Px(12.),
+                bottom: Val::Px(12.),
+                left: Val::Px(25.),
+                right: Val::Px(25.)
+            },
             ..default()
         },
         GlobalZIndex(3),
-        Visibility::Visible,
+        Visibility::Inherited,
         RelativeCursorPosition::default(),
         TextBoxBackground,
     )
@@ -73,7 +81,7 @@ pub fn messagetext(asset_server: &Res<AssetServer>) -> impl Bundle {
         Node::default(),
         TextFont {
             font: asset_server.load("fonts/ALLER.ttf"),
-            font_size: 40.0,
+            font_size: 30.0,
             ..default()
         },
         ZIndex(3),
@@ -83,7 +91,7 @@ pub fn messagetext(asset_server: &Res<AssetServer>) -> impl Bundle {
 
 pub fn infotext(asset_server: &Res<AssetServer>) -> impl Bundle {
     (
-        Text::new("TEST"),
+        Text::new(""),
         Node::default(),
         TextFont {
             font: asset_server.load("fonts/ALLER.ttf"),
@@ -95,7 +103,8 @@ pub fn infotext(asset_server: &Res<AssetServer>) -> impl Bundle {
             linebreak: LineBreak::WordBoundary,
         },
         TextColor(Color::Srgba(RED)),
-        ZIndex(3),
+        GlobalZIndex(4),
+        Visibility::Hidden,
         InfoText
     )
 }

@@ -1,14 +1,14 @@
 use std::ops::Index;
 use anyhow::Context;
 use bevy::prelude::*;
-use crate::{character::{controller::{FadingCharacters, SpriteKey}, CharacterConfig, CharactersResource}, Object, VisualNovelState};
+use crate::{character::{controller::{FadingCharacters, SpriteKey}, CharacterConfig, CharactersResource}, VisualNovelState};
 use crate::compiler::controller::UiRoot;
 
 #[derive(Component)]
 pub struct Character;
 
 pub fn change_character_emotion(
-    sprite: &mut Sprite,
+    image: &mut ImageNode,
     sprites: &Res<CharactersResource>,
     emotion: &str,
     config: &CharacterConfig
@@ -18,8 +18,8 @@ pub fn change_character_emotion(
        outfit: config.outfit.clone(),
        emotion: emotion.to_owned()
    };
-   let image = sprites.0.get(&sprite_key).with_context(|| format!("Sprite not found for {:?}", sprite_key))?;
-   sprite.image = image.clone();
+   let sprite = sprites.0.get(&sprite_key).with_context(|| format!("Sprite not found for {:?}", sprite_key))?;
+   image.image = sprite.clone();
    
    Ok(())
 }
@@ -30,15 +30,18 @@ pub fn apply_alpha(
     mut game_state: ResMut<VisualNovelState>,
 ) {
     if fading_characters.0.is_empty() {
+        info!("fading is empty");
         return;
     }
 
     let mut finished_anim: Vec<Entity> = Vec::new();
     for fading_char in &fading_characters.0 {
+        info!("searching image node");
         let mut s = match query.get_mut(fading_char.0) {
             Ok(e) => e,
             Err(_) => continue
         };
+        info!("found image node");
         let mut color = s.color;
         color.set_alpha(s.color.alpha() + fading_char.1);
         s.color = color;
@@ -47,7 +50,7 @@ pub fn apply_alpha(
         }
     }
     let mut to_remove: Vec<usize> = Vec::new();
-    let _ = fading_characters.0.iter().enumerate().for_each(|f| {
+    fading_characters.0.iter().enumerate().for_each(|f| {
         if finished_anim.contains(&f.1.0) {
             to_remove.push(f.0);
         }
@@ -81,29 +84,31 @@ pub fn spawn_character(
     };
     let image = sprites.0.get(&sprite_key).with_context(|| format!("No sprite found for {:?}", sprite_key))?;
     let image_asset = images.get(image).with_context(|| format!("Asset not found for {:?}", image))?;
-    info!("image sizes {:?}", image_asset.texture_descriptor.size);
     let aspect_ratio = image_asset.texture_descriptor.size.width as f32 / image_asset.texture_descriptor.size.height as f32;
-    let entity = commands.entity(ui_root.entity()).with_child((
-        ImageNode {
-            image: image.clone(),
-            color: Color::default().with_alpha(if *fading {
-                0.
-            } else { 1. }),
-            ..default()
-        },
-        Node {
-            position_type: PositionType::Absolute,
-            max_height: Val::Vh(75.),
-            bottom: Val::Px(0.),
-            aspect_ratio: Some(aspect_ratio),
-            ..default()
-        },
-        ZIndex(2),
-        Character,
-        character_config
-    )).id();
+    let character_entity = commands.spawn(
+        (
+            ImageNode {
+                image: image.clone(),
+                color: Color::default().with_alpha(if *fading {
+                    0.
+                } else { 1. }),
+                ..default()
+            },
+            Node {
+                position_type: PositionType::Absolute,
+                max_height: Val::Vh(75.),
+                bottom: Val::Px(0.),
+                aspect_ratio: Some(aspect_ratio),
+                ..default()
+            },
+            ZIndex(2),
+            Character,
+            character_config
+        )
+    ).id();
+    commands.entity(ui_root.entity()).add_child(character_entity);
     if *fading {
-        fading_characters.0.push((entity, 0.01, false));
+        fading_characters.0.push((character_entity, 0.01, false));
     }
     Ok(())
 }

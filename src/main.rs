@@ -52,11 +52,6 @@ impl AssetLoader for CharacterJsonLoader {
     }
 }
 
-#[derive(Component)]
-struct Object {
-    id: String
-}
-
 #[derive(Resource, Default)]
 pub struct VisualNovelState {
     // Player-designated constants
