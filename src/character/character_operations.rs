@@ -30,18 +30,15 @@ pub fn apply_alpha(
     mut game_state: ResMut<VisualNovelState>,
 ) {
     if fading_characters.0.is_empty() {
-        info!("fading is empty");
         return;
     }
 
     let mut finished_anim: Vec<Entity> = Vec::new();
     for fading_char in &fading_characters.0 {
-        info!("searching image node");
         let mut s = match query.get_mut(fading_char.0) {
             Ok(e) => e,
             Err(_) => continue
         };
-        info!("found image node");
         let mut color = s.color;
         color.set_alpha(s.color.alpha() + fading_char.1);
         s.color = color;
