@@ -1,9 +1,6 @@
-use bevy::{prelude::*, ui::RelativeCursorPosition};
-use crate::chat::controller::{NameBoxBackground, NameText, TextBoxBackground};
-
 use bevy::{color::palettes::css::RED, prelude::*, ui::RelativeCursorPosition};
-
 use crate::chat::{controller::{InfoText, MessageText, NameBoxBackground, NameText, TextBoxBackground}, GUIScrollText};
+
 pub fn backplate_container() -> impl Bundle {
     (
         Node {
