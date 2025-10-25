@@ -59,8 +59,8 @@ fn spawn_ui_root(
 ) {
     commands.spawn((
         Node {
-            width: Val::Percent(100.),
-            height: Val::Percent(100.),
+            width: Val::Vw(100.),
+            height: Val::Vh(100.),
             align_items: AlignItems::FlexEnd,
             justify_content: JustifyContent::Center,
             ..default()

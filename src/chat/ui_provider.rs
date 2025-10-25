@@ -1,12 +1,12 @@
 use bevy::{prelude::*, ui::RelativeCursorPosition};
-
 use crate::chat::controller::{NameBoxBackground, NameText, TextBoxBackground};
+
 pub fn backplate_container() -> impl Bundle {
     (
         Node {
             width: Val::Vw(70.),
             height: Val::Percent(20.),
-            margin: UiRect::all(Val::Auto).with_bottom(Val::Px(25.)),
+            margin: UiRect::all(Val::Auto).with_bottom(Val::Px(45.)),
             display: Display::Flex,
             flex_direction: FlexDirection::Column,
             ..default()
@@ -16,10 +16,9 @@ pub fn backplate_container() -> impl Bundle {
 }
 
 pub fn top_section() -> impl Bundle {
-    Node {
-        min_height: Val::Px(85.),
-        ..default()
-    }
+    // Needed for horizontal flex,
+    // open to modification
+    Node::default()
 }
 
 pub fn namebox() -> impl Bundle {
