@@ -185,6 +185,7 @@ fn update_characters(
     mut fading_characters: ResMut<FadingCharacters>,
     mut character_change_message: MessageReader<CharacterChangeMessage>,
     mut game_state: ResMut<VisualNovelState>,
+    images: Res<Assets<Image>>,
 
     _text_object_query: Query<(&mut Text, &mut GUIScrollText)>,
     _scroll_stopwatch: ResMut<ChatScrollStopwatch>,
@@ -198,7 +199,7 @@ fn update_characters(
                 if let Some(_) = character_query.iter_mut().find(|entity| entity.1.name == character_config.name) {
                     warn!("Another instance of the character is already in the World!");
                 }
-                spawn_character(&mut commands, character_config.clone(), &sprites, fading, &mut fading_characters, &ui_root)?;
+                spawn_character(&mut commands, character_config.clone(), &sprites, fading, &mut fading_characters, &ui_root, &images)?;
                 if *fading {
                     game_state.blocking = true;
                 }

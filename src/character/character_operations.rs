@@ -72,13 +72,17 @@ pub fn spawn_character(
     fading: &bool,
     fading_characters: &mut ResMut<FadingCharacters>,
     ui_root: &Single<Entity, With<UiRoot>>,
+    images: &Res<Assets<Image>>,
 ) -> Result<(), BevyError> {
     let sprite_key = SpriteKey {
         character: character_config.name.clone(),
         outfit: character_config.outfit.clone(),
         emotion: character_config.emotion.clone(),
     };
-    let image = sprites.0.get(&sprite_key).with_context(|| format!("No sprite founr for {:?}", sprite_key))?;
+    let image = sprites.0.get(&sprite_key).with_context(|| format!("No sprite found for {:?}", sprite_key))?;
+    let image_asset = images.get(image).with_context(|| format!("Asset not found for {:?}", image))?;
+    info!("image sizes {:?}", image_asset.texture_descriptor.size);
+    let aspect_ratio = image_asset.texture_descriptor.size.width as f32 / image_asset.texture_descriptor.size.height as f32;
     let entity = commands.entity(ui_root.entity()).with_child((
         ImageNode {
             image: image.clone(),
@@ -91,6 +95,7 @@ pub fn spawn_character(
             position_type: PositionType::Absolute,
             max_height: Val::Vh(75.),
             bottom: Val::Px(0.),
+            aspect_ratio: Some(aspect_ratio),
             ..default()
         },
         ZIndex(2),

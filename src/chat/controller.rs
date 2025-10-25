@@ -136,7 +136,7 @@ impl Plugin for ChatController {
 fn handle_click(
     relative_cursor: Single<&RelativeCursorPosition>
 ) {
-    info!("HANDLE CLICK {}", relative_cursor.cursor_over());
+    // info!("HANDLE CLICK {}", relative_cursor.cursor_over());
 }
 fn setup(
     mut commands: Commands,
